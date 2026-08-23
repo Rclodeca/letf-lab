@@ -178,12 +178,26 @@ def diff_signals(prev, cur):
     return [(k, prev[k], v) for k, v in cur.items() if k in prev and prev[k] != v]
 
 
-def _render_change(kind, old, new):
-    if kind == "verdict":
-        word = {True: "RISK-ON", False: "risk-off"}
-        return f"{word[old]} → {word[new]}"
-    # light: states are already display strings ("BUY"/"HOLD"/"SELL")
-    return f"{old} → {new}"
+def _banner_lines(changes, meta):
+    """Actionable-change banner lines for the top of the message.
+
+    Fires for: vote-of-2 signal flips (either direction — risk-on and risk-off
+    are both actionable) and 200SMA light changes only when the NEW state is
+    BUY or SELL. A change *to* HOLD is intentionally ignored (no action needed).
+    """
+    out = []
+    for key, old, new in changes:
+        info = meta.get(key, {})
+        kind = info.get("kind")
+        if kind == "verdict":
+            arrow = f"{SIGNAL_DOT[old]} → {SIGNAL_DOT[new]}"
+            name = info.get("label", key).replace(" signal", "")
+            word = "RISK-ON" if new else "RISK-OFF"
+            out.append(f"{arrow}  {name} now {word}")
+        elif kind == "light" and new in ("BUY", "SELL"):
+            arrow = f"{LIGHT_EMOJI[old]} → {LIGHT_EMOJI[new]}"
+            out.append(f'{arrow}  {info.get("label", key)} now {new}')
+    return out
 
 
 def _ladder(price, levels):
@@ -200,7 +214,18 @@ def _ladder(price, levels):
 
 
 def format_message(display, changes, meta):
-    lines = [f'📊 LETF Lab — {display["date"] or date.today().isoformat()}', ""]
+    lines = []
+
+    # Big attention banner at the very top on actionable changes. Being first,
+    # it also becomes the phone's notification preview.
+    banner = _banner_lines(changes, meta)
+    if banner:
+        lines.append("<b>🚨 SIGNAL CHANGE</b>")
+        lines += banner
+        lines.append("")
+
+    lines.append(f'📊 LETF Lab — {display["date"] or date.today().isoformat()}')
+    lines.append("")
 
     for s in display["strategies"]:
         state = "RISK-ON" if s["risk_on"] else "risk-off"
@@ -233,13 +258,6 @@ def format_message(display, changes, meta):
         )
         block.append("")
     lines.append("<pre>" + "\n".join(block).rstrip() + "</pre>")
-
-    if changes:
-        lines.append("")
-        lines.append("⚠️ Changed today")
-        for key, old, new in changes:
-            info = meta.get(key, {"label": key, "kind": "light"})
-            lines.append(f'  {info["label"]}: {_render_change(info["kind"], old, new)}')
 
     return "\n".join(lines)
 
