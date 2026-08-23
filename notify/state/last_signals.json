@@ -1,4 +1,13 @@
 {
-  "date": null,
-  "signals": {}
+  "date": "2026-08-21",
+  "signals": {
+    "QQQ_above_sma200_p4": true,
+    "QQQ_below_sma200": false,
+    "QQQ_below_sma200_m3": false,
+    "QQQ_signal": true,
+    "SPY_above_sma200_p4": true,
+    "SPY_below_sma200": false,
+    "SPY_below_sma200_m3": false,
+    "SPY_signal": true
+  }
 }
