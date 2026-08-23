@@ -19,18 +19,25 @@ SPY  🟢 RISK-ON (3/4)
    SMA250 ✓  SMA100 ✓  Vol21d ✓  AR(1) ✗
 QQQ  🟢 RISK-ON (4/4)
    SMA250 ✓  SMA100 ✓  Vol21d ✓  AR(1) ✓
+SPY 200SMA  🟢 BUY
+QQQ 200SMA  🟡 HOLD
 
-SMA-200 watch
-  ✗  SPY < 200SMA
-  ✓  SPY > 200SMA +4%
-  ✗  SPY < 200SMA −3%
-  ✗  QQQ < 200SMA
-  ✓  QQQ > 200SMA +4%
-  ✗  QQQ < 200SMA −3%
+Raw values
+SPY  765.72  (+0.41%)
+   SMA250 695.35   SMA100 734.52   SMA200 704.98
+   +4% 733.18   −3% 683.83
+QQQ  713.44  (+0.35%)
+   SMA250 640.49   SMA100 694.44   SMA200 651.74
+   +4% 677.81   −3% 632.19
 
 ⚠️ Changed today
-  SPY > 200SMA +4%: cleared → triggered
+  QQQ 200SMA: BUY → HOLD
 ```
+
+The two vote-of-2 signals are 🟢 risk-on / 🔴 risk-off. The two SMA-200 traffic
+lights are 🟢 BUY (price > SMA200 +4%), 🟡 HOLD (inside the ±band), 🔴 SELL
+(price < SMA200 −3%). "Changed today" fires when any of these four discrete
+states flips vs the previous run.
 
 ## One-time setup
 
@@ -73,7 +80,8 @@ several minutes under load.
 Edit `watchlist.py`:
 - `STRATEGIES` — add/remove vote-of-k signals (any benchmark ticker, any of the
   engine's indicator types: `SMA_GATE`, `EMA_GATE`, `VOL_GATE`, `AR1_GATE`).
-- `SMA200_CHECKS` — add/remove standalone price-vs-SMA checks (`op` is `lt`/`gt`,
-  `factor` multiplies the SMA, e.g. `1.05` for +5%).
+- `TRAFFIC_LIGHTS` — add/remove 3-state SMA-200 lights (`upper`/`lower` multiply
+  the SMA200 to set the BUY/SELL bands, e.g. `1.04` = +4%, `0.97` = −3%).
+- `RAW_ASSETS` — which tickers get a raw-values block.
 
 No other file needs to change.
