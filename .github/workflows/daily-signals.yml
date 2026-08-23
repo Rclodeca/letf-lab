@@ -1,0 +1,60 @@
+name: Daily LETF signals
+
+on:
+  # 22:00 UTC on weekdays. This is after the US market close year-round:
+  # 18:00 ET during EDT, 17:00 ET during EST. GitHub cron has no timezone,
+  # so this fixed UTC time drifts by an hour across DST but always lands
+  # after the 16:00 ET close. Adjust if you want a specific ET time.
+  schedule:
+    - cron: "0 22 * * 1-5"
+  # Manual trigger for testing.
+  workflow_dispatch:
+
+# Needed so the job can commit the updated state file back to the repo.
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-signals
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    env:
+      PRICE_CACHE_DIR: ./data/prices
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Reuse the app's engine (ai_swing) and its dependencies.
+      - name: Install backend package
+        run: pip install ./backend
+
+      # Persist the parquet price cache between runs so daily runs only fetch
+      # recent bars instead of full history. Keyed by week so it refreshes.
+      - name: Restore price cache
+        uses: actions/cache@v4
+        with:
+          path: data/prices
+          key: price-cache-v1
+
+      - name: Compute signals and notify
+        run: python -m notify.daily_signals
+
+      - name: Commit updated state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- notify/state/last_signals.json; then
+            git add notify/state/last_signals.json
+            git commit -m "chore: update signal state [skip ci]"
+            git push
+          else
+            echo "No signal state change to commit."
+          fi
