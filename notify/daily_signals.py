@@ -30,6 +30,7 @@ import httpx
 
 from ai_swing.data import get_price_service
 from ai_swing.db.models import IndicatorType
+from ai_swing.indicators import functions as F
 from ai_swing.indicators.evaluator import evaluate_indicator
 
 from notify.watchlist import RAW_ASSETS, STRATEGIES, TRAFFIC_LIGHTS
@@ -143,6 +144,7 @@ def compute():
     # 3. Raw values panel.
     for asset in RAW_ASSETS:
         prices = prices_by_asset[asset]
+        returns = prices.pct_change()
         sma200 = _sma(prices, 200)
         display["raw"].append(
             {
@@ -154,6 +156,8 @@ def compute():
                 "sma200": sma200,
                 "band_up": sma200 * 1.04 if sma200 is not None else None,
                 "band_dn": sma200 * 0.97 if sma200 is not None else None,
+                "vol21": _latest(F.realized_vol(returns, window=21)),
+                "ar1": _latest(F.ar1_coefficient(returns, window=30)),
             }
         )
 
@@ -217,6 +221,11 @@ def format_message(display, changes, meta):
         block.append(f'{rv["asset"]}   ({pct})')
         block.append("  vote-of-2 SMAs")
         block += _ladder(rv["price"], [("SMA100", rv["sma100"]), ("SMA250", rv["sma250"])])
+        block.append("  vote-of-2 vol / mom")
+        vol = f'{rv["vol21"] * 100:.2f}%' if rv["vol21"] is not None else "n/a"
+        ar1 = f'{rv["ar1"]:+.3f}' if rv["ar1"] is not None else "n/a"
+        block.append(f"    {vol:>8}  Vol21d   cap 40%")
+        block.append(f"    {ar1:>8}  AR(1)    min 0")
         block.append("  200SMA bands")
         block += _ladder(
             rv["price"],
