@@ -32,9 +32,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Reuse the app's engine (ai_swing) and its dependencies.
+      # Reuse the app's engine (ai_swing) and its dependencies. Editable install
+      # is required: the app's pyproject declares packages = ["ai_swing"] only,
+      # so a wheel build omits subpackages (ai_swing.data, .services, …). Editable
+      # puts the full source tree on the path, matching local `make install`.
       - name: Install backend package
-        run: pip install ./backend
+        run: pip install -e ./backend
 
       # Persist the parquet price cache between runs so daily runs only fetch
       # recent bars instead of full history. Keyed by week so it refreshes.
