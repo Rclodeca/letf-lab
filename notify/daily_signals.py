@@ -182,8 +182,17 @@ def _render_change(kind, old, new):
     return f"{old} → {new}"
 
 
-def _fmt(x):
-    return f"{x:.2f}" if x is not None else "n/a"
+def _ladder(price, levels):
+    """Render a mini-ladder: the group's levels plus the price, sorted high→low,
+    with the price row marked. `levels` is a list of (label, value)."""
+    rows = [(price, "price", True)] + [(v, lbl, False) for lbl, v in levels]
+    rows = [r for r in rows if r[0] is not None]
+    rows.sort(key=lambda r: r[0], reverse=True)
+    out = []
+    for value, label, is_price in rows:
+        marker = "▶" if is_price else " "
+        out.append(f"  {marker} {value:>8.2f}  {label}")
+    return out
 
 
 def format_message(display, changes, meta):
@@ -198,13 +207,23 @@ def format_message(display, changes, meta):
     for lt in display["lights"]:
         lines.append(f'{lt["name"]}  {LIGHT_EMOJI[lt["state"]]} {lt["state"]}')
 
+    # Raw values panel — monospace (<pre>) so the ladders align. Two groups per
+    # asset: the vote-of-2 trend SMAs, and the 200SMA traffic-light bands.
     lines.append("")
     lines.append("Raw values")
+    block = []
     for rv in display["raw"]:
         pct = f'{rv["pct"]:+.2f}%' if rv["pct"] is not None else "n/a"
-        lines.append(f'{rv["asset"]}  {_fmt(rv["price"])}  ({pct})')
-        lines.append(f'   SMA250 {_fmt(rv["sma250"])}   SMA100 {_fmt(rv["sma100"])}   SMA200 {_fmt(rv["sma200"])}')
-        lines.append(f'   +4% {_fmt(rv["band_up"])}   −3% {_fmt(rv["band_dn"])}')
+        block.append(f'{rv["asset"]}   ({pct})')
+        block.append("  vote-of-2 SMAs")
+        block += _ladder(rv["price"], [("SMA100", rv["sma100"]), ("SMA250", rv["sma250"])])
+        block.append("  200SMA bands")
+        block += _ladder(
+            rv["price"],
+            [("+4% band", rv["band_up"]), ("SMA200", rv["sma200"]), ("−3% band", rv["band_dn"])],
+        )
+        block.append("")
+    lines.append("<pre>" + "\n".join(block).rstrip() + "</pre>")
 
     if changes:
         lines.append("")
@@ -220,7 +239,11 @@ def send_telegram(text):
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = httpx.post(url, json={"chat_id": chat_id, "text": text}, timeout=30)
+    resp = httpx.post(
+        url,
+        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+        timeout=30,
+    )
     resp.raise_for_status()
 
 
