@@ -72,3 +72,32 @@ Notes:
 - Test window has **no 2008-scale crash** — drawdowns are optimistic.
 - Holds are gross; rotations are net-of-tax (not perfectly apples-to-apples).
 - This is analysis of backtests, **not financial advice**.
+
+## Synthetic-LETF crash backtest (2000 & 2008)
+
+Leveraged ETFs reconstructed from total-return indices (^SP500TR, ^NDX) via the
+daily-reset model: `daily = L*idx_ret - (L-1)*(short_rate+0.5% spread)/252 - expense/252`.
+Calibrated against real ETFs over their overlap: daily-return correlation 0.995-0.999
+(drawdowns trustworthy); CAGR ~0.5-1.9pp/yr optimistic (so real results slightly worse).
+Scripts: `synth_calibrate.py` (validation), `synth_scenarios.py` (crashes).
+
+Max drawdowns:
+
+| Instrument | Dot-com 00-02 | GFC 07-09 | Full 2000-26 CAGR / maxDD |
+|---|--:|--:|--:|
+| S&P 1x | -47% | -55% | 8.4% / -55% |
+| SSO 2x | -79% | -84% | 9.5% / -88% |
+| UPRO 3x | -92% | -96% | 7.4% / -98% |
+| QLD 2x | -99% | -83% | 6.3% / -99% |
+| TQQQ 3x | -100% | -95% | -2.6% / -100% |
+| k>=2 SPY->SSO | -61% | -40% | 12.2% / -71% |
+| 200SMA QQQ->TQQQ | -92% | -57% | 12.5% / -93% |
+| 60/20/20 hold* | (n/a, GLD from 2004) | -60% | 14.2% / -60% |
+
+*Hold 2004-2026, ZROZ proxied by TLT.
+
+Key conclusions:
+- Real-crash drawdowns are ~2x the bull-only (2009-2026) window's.
+- 3x (esp. TQQQ) is catastrophic in a tech crash; buy-hold TQQQ from 2000 lost money over 25y.
+- Trend signals protect in orderly crashes (2008) but fail in choppy bears (2000).
+- Leverage doesn't reliably beat 1x once crashes are included; only timed 2x (k>=2 SPY->SSO) did.
