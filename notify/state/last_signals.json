@@ -4,6 +4,7 @@
     "QQQ_200sma": "BUY",
     "QQQ_signal": true,
     "SPY_200sma": "BUY",
-    "SPY_signal": true
+    "SPY_signal": true,
+    "golden_ratio_signal": true
   }
 }
