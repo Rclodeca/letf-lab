@@ -49,5 +49,15 @@ DUAL_GATES = [
     },
 ]
 
+# Emergency euphoria-valve checks — a blow-off-top guard from the dot-com
+# backtest (research/synth_200sma_spy_tqqq_1995_euphoria.py): force attention
+# whenever price runs unusually far above its own 200SMA, regardless of what
+# the regular gates say. Normally hidden from the message; when any of these
+# trip, an EMERGENCY banner is shown at the very top of the alert.
+EMERGENCY = [
+    {"name": "QQQ euphoria", "asset": "QQQ", "threshold": 0.30},
+    {"name": "SPY euphoria", "asset": "SPY", "threshold": 0.30},
+]
+
 # Assets to print raw values for (price, day change, SMA250/100/200, +4%/-3% bands).
 RAW_ASSETS = ["SPY", "QQQ"]
