@@ -93,7 +93,7 @@ def compute():
 
     signals = {}
     meta = {}
-    display = {"date": None, "strategies": [], "lights": [], "raw": []}
+    display = {"date": None, "strategies": [], "lights": [], "raw": [], "dual_gate_raw": []}
 
     # 1. Standard vote-of-k signals (SPY, QQQ).
     for spec in STRATEGIES:
@@ -154,6 +154,26 @@ def compute():
                 "gates": [(r.indicator_name, r.gate_passed) for r in results],
             }
         )
+        # Raw band values, per indicator's own SMA period + hysteresis threshold
+        # (e.g. SPY ±0.5%, TIP ±0.1% — distinct from the fixed traffic-light bands).
+        for ind_spec in spec["indicators"]:
+            asset = ind_spec["asset"]
+            period = int(ind_spec["params"].get("period", 200))
+            threshold = float(ind_spec["params"].get("threshold", 0.0))
+            prices = prices_by_asset[asset]
+            sma = _sma(prices, period)
+            display["dual_gate_raw"].append(
+                {
+                    "gate": spec["name"],
+                    "asset": asset,
+                    "period": period,
+                    "threshold": threshold,
+                    "price": _latest(prices),
+                    "sma": sma,
+                    "band_up": sma * (1 + threshold) if sma is not None else None,
+                    "band_dn": sma * (1 - threshold) if sma is not None else None,
+                }
+            )
 
     # 2. 3-state SMA-200 traffic lights (SPY 200SMA, QQQ 200SMA).
     for t in TRAFFIC_LIGHTS:
@@ -300,6 +320,27 @@ def format_message(display, changes, meta):
             [("+4% band", rv["band_up"]), ("SMA200", rv["sma200"]), ("−3% band", rv["band_dn"])],
         )
         block.append("")
+
+    # Golden Ratio-style dual-gate raw bands — each indicator's own SMA
+    # period + hysteresis threshold (e.g. SPY ±0.5%, TIP ±0.1%).
+    if display["dual_gate_raw"]:
+        by_gate = {}
+        for rv in display["dual_gate_raw"]:
+            by_gate.setdefault(rv["gate"], []).append(rv)
+        for gate_name, rows in by_gate.items():
+            block.append(gate_name)
+            for rv in rows:
+                pct = f'{rv["threshold"] * 100:.1f}%'
+                block.append(f'  {rv["asset"]}  SMA{rv["period"]} (±{pct} band)')
+                block += _ladder(
+                    rv["price"],
+                    [
+                        (f"+{pct} band", rv["band_up"]),
+                        (f'SMA{rv["period"]}', rv["sma"]),
+                        (f"-{pct} band", rv["band_dn"]),
+                    ],
+                )
+            block.append("")
     lines.append("<pre>" + "\n".join(block).rstrip() + "</pre>")
 
     return "\n".join(lines)
