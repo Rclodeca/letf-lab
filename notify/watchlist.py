@@ -8,8 +8,8 @@ match the app.
 # The 4 standard indicators, mirroring backend/scripts/seed.py. Applied to each
 # benchmark below to produce a vote-of-k signal.
 _STANDARD_INDICATORS = [
-    {"name": "SMA250", "type": "SMA_GATE", "params": {"period": 250, "threshold": 0.0}},
-    {"name": "SMA100", "type": "SMA_GATE", "params": {"period": 100, "threshold": 0.0}},
+    {"name": "SMA250", "type": "SMA_GATE", "params": {"period": 250, "threshold": 0.05}},
+    {"name": "SMA100", "type": "SMA_GATE", "params": {"period": 100, "threshold": 0.05}},
     {"name": "Vol21d", "type": "VOL_GATE", "params": {"window": 21, "threshold": 0.40}},
     {"name": "AR(1)", "type": "AR1_GATE", "params": {"window": 30, "threshold": 0.0}},
 ]
