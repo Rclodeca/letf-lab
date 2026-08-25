@@ -30,5 +30,21 @@ TRAFFIC_LIGHTS = [
     {"name": "QQQ 200SMA", "asset": "QQQ", "key": "QQQ_200sma", "upper": 1.04, "lower": 0.97},
 ]
 
+# AND-combined multi-asset gates: risk-on only when EVERY indicator passes,
+# each on its own asset. This is the r/LETFs "Golden Ratio" de-lever signal
+# (see research/golden_ratio_delever.py, variant C) — SPY 200SMA with a
+# +/-0.5% hysteresis band AND TIP 200SMA with a tighter +/-0.1% band (TIP's
+# own vol is much lower than SPY's, so the same 0.5% band would be oversized).
+DUAL_GATES = [
+    {
+        "name": "Golden Ratio (SPY+TIP)",
+        "key": "golden_ratio_signal",
+        "indicators": [
+            {"asset": "SPY", "name": "SPY_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.005}},
+            {"asset": "TIP", "name": "TIP_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.001}},
+        ],
+    },
+]
+
 # Assets to print raw values for (price, day change, SMA250/100/200, +4%/-3% bands).
 RAW_ASSETS = ["SPY", "QQQ"]

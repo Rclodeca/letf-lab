@@ -1,8 +1,9 @@
 """Daily LETF signal notifier.
 
-Computes the SPY and QQQ vote-of-2 signals, two 3-state SMA-200 "traffic light"
-strategies, and a raw-values panel — all defined in watchlist.py — diffs the
-discrete states against the previous run, and pushes a summary to Telegram.
+Computes the SPY and QQQ vote-of-2 signals, the Golden Ratio SPY+TIP
+de-lever gate, two 3-state SMA-200 "traffic light" strategies, and a
+raw-values panel — all defined in watchlist.py — diffs the discrete states
+against the previous run, and pushes a summary to Telegram.
 
 Reuses the LETF Lab engine (`ai_swing.indicators.evaluator.evaluate_indicator`
 and `ai_swing.data.PriceService`) so the numbers match the app exactly. No
@@ -33,7 +34,7 @@ from ai_swing.db.models import IndicatorType
 from ai_swing.indicators import functions as F
 from ai_swing.indicators.evaluator import evaluate_indicator
 
-from notify.watchlist import RAW_ASSETS, STRATEGIES, TRAFFIC_LIGHTS
+from notify.watchlist import DUAL_GATES, RAW_ASSETS, STRATEGIES, TRAFFIC_LIGHTS
 
 STATE_PATH = Path(__file__).parent / "state" / "last_signals.json"
 CHECK, CROSS = "✓", "✗"
@@ -79,6 +80,7 @@ def compute():
     assets = (
         {s["benchmark"] for s in STRATEGIES}
         | {t["asset"] for t in TRAFFIC_LIGHTS}
+        | {i["asset"] for g in DUAL_GATES for i in g["indicators"]}
         | set(RAW_ASSETS)
     )
     prices_by_asset = {}
@@ -114,6 +116,35 @@ def compute():
         d = _latest_date(prices)
         if d and not display["date"]:
             display["date"] = d.isoformat()
+        display["strategies"].append(
+            {
+                "name": spec["name"],
+                "risk_on": risk_on,
+                "score": score,
+                "total": len(results),
+                "gates": [(r.indicator_name, r.gate_passed) for r in results],
+            }
+        )
+
+    # 1b. AND-combined multi-asset gates (e.g. the Golden Ratio SPY+TIP
+    # de-lever signal) — risk-on only when every indicator passes.
+    for spec in DUAL_GATES:
+        results = []
+        for ind_spec in spec["indicators"]:
+            prices = prices_by_asset[ind_spec["asset"]]
+            returns = prices.pct_change()
+            ind = SimpleNamespace(
+                id=0,
+                name=ind_spec["name"],
+                type=IndicatorType(ind_spec["type"]),
+                params=ind_spec["params"],
+            )
+            results.append(evaluate_indicator(ind, prices, returns=returns))
+        score = sum(1 for r in results if r.gate_passed)
+        risk_on = score == len(results)
+        key = spec["key"]
+        signals[key] = risk_on
+        meta[key] = {"label": spec["name"], "kind": "verdict"}
         display["strategies"].append(
             {
                 "name": spec["name"],
