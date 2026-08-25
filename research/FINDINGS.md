@@ -67,6 +67,33 @@ Notes:
   fraction of the complexity — but always fully invested (no crash exit), so the
   −38% drawdown is optimistic for a window with no 2008.
 
+## ZROZ duration-dial: chosen config is 60/20/10/10 SSO/GLD/ZROZ/BIL
+
+ZROZ (25+y zero-coupon strips, duration ≈ maturity) is a pure duration bet: its
+historical returns lean heavily on the 1981–2020 secular rate decline, which
+can't repeat the same way from here. It's deflationary-crash insurance (COVID
+2020: −8.7% vs. the strategy's −28% real-crash test above), not a return driver
+— and it has a real cost in rate-driven/inflationary regimes (2022: −32.4%,
+worst of everything tested below).
+
+Ran the same 60/20/20 quarterly hold with half the ZROZ sleeve dialed down two
+ways, same window (Nov 2009–present, ZROZ-bound):
+
+| Variant | CAGR | Max DD | Sortino | COVID 2020 | 2022 bear |
+|---|--:|--:|--:|--:|--:|
+| 60/20/20 ZROZ (baseline) | 18.9% | −38.9% | 1.41 | **−8.7%** | −32.4% |
+| 60/20/20 TLT (full swap) | 18.5% | −37.0% | 1.37 | −10.4% | −30.2% |
+| 60/20/10/10 ZROZ+TLT | 18.7% | −38.0% | 1.39 | −9.6% | −31.3% |
+| **60/20/10/10 ZROZ+BIL (chosen)** | 18.4% | **−35.2%** | 1.36 | −11.7% | **−28.4%** |
+
+All four land within 0.5pp CAGR / 0.05 Sortino of each other — dialing down
+duration costs almost nothing on the full-period number in this sample. **Decision:
+half ZROZ + half BIL** — keeps some deflationary-crash insurance without making
+a full-size bet on which way the next decade of rates goes, and meaningfully
+softens the 2022-style stagflation tail. Scripts: `zroz_duration_dial.py`
+(this table), `golden_ratio_delever.py` (the r/LETFs Golden-Ratio comparison
+that prompted it).
+
 ## Standing caveats
 
 - Test window has **no 2008-scale crash** — drawdowns are optimistic.
@@ -101,3 +128,55 @@ Key conclusions:
 - 3x (esp. TQQQ) is catastrophic in a tech crash; buy-hold TQQQ from 2000 lost money over 25y.
 - Trend signals protect in orderly crashes (2008) but fail in choppy bears (2000).
 - Leverage doesn't reliably beat 1x once crashes are included; only timed 2x (k>=2 SPY->SSO) did.
+
+## SPY 200SMA -> TQQQ, asymmetric band + euphoria valve (1995-2026)
+
+Same synthetic-TQQQ reconstruction as above (^NDX-based, calibrated vs real
+TQQQ), extended back to 1995 (^SP500TR/^NDX/^IRX all have data that far back;
+BIL/SGOV don't, so cash risk-off uses the ^IRX short-rate proxy). Script:
+`synth_200sma_spy_tqqq_1995_euphoria.py`.
+
+Rules:
+- **Buy**: SPY crosses above SMA200(SPY)×1.04 → 100% TQQQ.
+- **Sell**: SPY crosses below SMA200(SPY)×0.97 → 100% cash. Hysteresis holds
+  the prior state in between (no thrash inside the band).
+- **Euphoria valve**: whenever QQQ (^NDX) trades >30% above its own
+  SMA200(NDX), force 100% cash regardless of the SPY signal — a guard
+  against holding 3x exposure into a dot-com-style blow-off top.
+
+| Variant | CAGR | Max DD | Sortino | Flips | Time in TQQQ | Time in QQQ (ramp) | Time in cash |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| Plain (cash only, no valve) | 32.8% | −82.1% | 1.12 | 26 | 75% | — | 25% |
+| **+ euphoria valve** (recommended) | 31.8% | **−69.0%** | 1.12 | 48 | 73% | — | 27% |
+| + DCA-to-QQQ ramp + euphoria valve | 29.2% | −87.5% | 1.06 | 48 | 73% | 14% | 13% |
+| TQQQ 3x buy-hold (reference) | 14.6% | −100.0% | 0.83 | — | — | — | — |
+| S&P 500 1x buy-hold (reference) | 11.3% | −55.3% | 0.95 | — | — | — | — |
+
+Crash-window return / max drawdown, all three variants vs. TQQQ buy-hold:
+
+| Window | Plain | + euphoria valve | + DCA + euphoria | TQQQ buy-hold |
+|---|--:|--:|--:|--:|
+| Dot-com 2000-02 | −76% / −82% | — / **−69%** | −85% / −87% | −100% / −100% |
+| GFC 2007-09 | −18% / −39% | — / −39% | −35% / **−61%** | −84% / −95% |
+| COVID 2020 | −47% / −48% | — / −48% | −45% / −48% | −39% / −70% |
+| 2022 bear | −45% / −47% | — / −47% | −51% / −54% | −79% / −81% |
+
+*(first number = cumulative window return, second = max drawdown within the window; "—" = unchanged from plain)*
+
+The valve flagged 183 days total, 159 of them in 1999-2000 — it correctly
+caught the actual dot-com melt-up and sat in cash through it, cutting that
+crash's drawdown by 13pp for only ~1pp of CAGR and no Sortino cost. It's a
+one-sided win: no effect outside dot-com because QQQ never got 30% above its
+200SMA in the other stress windows tested.
+
+A variant was also tried where, instead of jumping straight to 100% cash on
+the sell trigger, the risk-off leg **DCA's into QQQ (1x) over a fixed
+10-month calendar** (reverting to 100% TQQQ immediately if the buy trigger
+fires first). It **underperforms the cash-only version** (dot-com maxDD −85%,
+GFC maxDD −61%, both worse) because the ramp is calendar-based, not
+price-confirmed: the sell trigger fired 2007-11-21 and 2000-10-10, and 10
+months later — 2008-09-21 and 2001-08 respectively — is fully invested in
+QQQ right as the second, worse leg of each crash hit (Lehman in Sept 2008;
+NDX's continued grind down through Oct 2002). Fixed-calendar re-risking
+during a still-falling market is worse than just staying in cash. Script
+kept for reference: `synth_dca_spy_tqqq_qqq_1995.py`.
