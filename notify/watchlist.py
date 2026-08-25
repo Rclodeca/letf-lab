@@ -32,15 +32,18 @@ TRAFFIC_LIGHTS = [
 
 # AND-combined multi-asset gates: risk-on only when EVERY indicator passes,
 # each on its own asset. This is the r/LETFs "Golden Ratio" de-lever signal
-# (see research/golden_ratio_delever.py, variant C) — SPY 200SMA with a
-# +/-0.5% hysteresis band AND TIP 200SMA with a tighter +/-0.1% band (TIP's
-# own vol is much lower than SPY's, so the same 0.5% band would be oversized).
+# (see research/golden_ratio_delever.py, variant C, and the robustness-grid
+# follow-up) — SPY 200SMA with a +/-1% hysteresis band AND TIP 200SMA with a
+# tighter +/-0.1% band. SPY's band was widened from 0.5% -> 1% after testing
+# showed 1% strictly dominates on CAGR/MaxDD/Sortino/trade-count; TIP stays
+# tight because its signal is the primary regime-read for slow bear markets
+# (loosening it made the 2022 bear result worse).
 DUAL_GATES = [
     {
         "name": "Golden Ratio (SPY+TIP)",
         "key": "golden_ratio_signal",
         "indicators": [
-            {"asset": "SPY", "name": "SPY_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.005}},
+            {"asset": "SPY", "name": "SPY_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.01}},
             {"asset": "TIP", "name": "TIP_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.001}},
         ],
     },
