@@ -155,7 +155,7 @@ def compute():
             }
         )
         # Raw band values, per indicator's own SMA period + hysteresis threshold
-        # (e.g. SPY ±0.5%, TIP ±0.1% — distinct from the fixed traffic-light bands).
+        # (e.g. SPY ±1%, TIP ±0.1% — distinct from the fixed traffic-light bands).
         for ind_spec in spec["indicators"]:
             asset = ind_spec["asset"]
             period = int(ind_spec["params"].get("period", 200))
@@ -322,7 +322,7 @@ def format_message(display, changes, meta):
         block.append("")
 
     # Golden Ratio-style dual-gate raw bands — each indicator's own SMA
-    # period + hysteresis threshold (e.g. SPY ±0.5%, TIP ±0.1%).
+    # period + hysteresis threshold (e.g. SPY ±1%, TIP ±0.1%).
     if display["dual_gate_raw"]:
         by_gate = {}
         for rv in display["dual_gate_raw"]:
