@@ -1,9 +1,10 @@
 """Daily LETF signal notifier.
 
 Computes the SPY and QQQ vote-of-2 signals, the Golden Ratio SPY+TIP
-de-lever gate, two 3-state SMA-200 "traffic light" strategies, and a
-raw-values panel — all defined in watchlist.py — diffs the discrete states
-against the previous run, and pushes a summary to Telegram.
+de-lever gate, two 3-state SMA-200 "traffic light" strategies, a
+raw-values panel, and a hidden-unless-triggered emergency euphoria-valve
+check — all defined in watchlist.py — diffs the discrete states against
+the previous run, and pushes a summary to Telegram.
 
 Reuses the LETF Lab engine (`ai_swing.indicators.evaluator.evaluate_indicator`
 and `ai_swing.data.PriceService`) so the numbers match the app exactly. No
@@ -34,7 +35,7 @@ from ai_swing.db.models import IndicatorType
 from ai_swing.indicators import functions as F
 from ai_swing.indicators.evaluator import evaluate_indicator
 
-from notify.watchlist import DUAL_GATES, RAW_ASSETS, STRATEGIES, TRAFFIC_LIGHTS
+from notify.watchlist import DUAL_GATES, EMERGENCY, RAW_ASSETS, STRATEGIES, TRAFFIC_LIGHTS
 
 STATE_PATH = Path(__file__).parent / "state" / "last_signals.json"
 CHECK, CROSS = "✓", "✗"
@@ -81,6 +82,7 @@ def compute():
         {s["benchmark"] for s in STRATEGIES}
         | {t["asset"] for t in TRAFFIC_LIGHTS}
         | {i["asset"] for g in DUAL_GATES for i in g["indicators"]}
+        | {e["asset"] for e in EMERGENCY}
         | set(RAW_ASSETS)
     )
     prices_by_asset = {}
@@ -93,7 +95,7 @@ def compute():
 
     signals = {}
     meta = {}
-    display = {"date": None, "strategies": [], "lights": [], "raw": [], "dual_gate_raw": []}
+    display = {"date": None, "strategies": [], "lights": [], "raw": [], "dual_gate_raw": [], "emergency": []}
 
     # 1. Standard vote-of-k signals (SPY, QQQ).
     for spec in STRATEGIES:
@@ -218,6 +220,29 @@ def compute():
             }
         )
 
+    # 4. Emergency euphoria-valve checks. Normally hidden; surfaced at the top
+    # of the message only when price has run unusually far above its 200SMA.
+    for e in EMERGENCY:
+        prices = prices_by_asset[e["asset"]]
+        price = _latest(prices)
+        sma200 = _sma(prices, 200)
+        band = sma200 * (1 + e["threshold"]) if sma200 is not None else None
+        triggered = price is not None and band is not None and price > band
+        key = f'{e["asset"]}_emergency'
+        signals[key] = triggered
+        meta[key] = {"label": e["name"], "kind": "emergency"}
+        display["emergency"].append(
+            {
+                "name": e["name"],
+                "asset": e["asset"],
+                "threshold": e["threshold"],
+                "price": price,
+                "sma200": sma200,
+                "band": band,
+                "triggered": triggered,
+            }
+        )
+
     return signals, display, meta
 
 
@@ -257,6 +282,17 @@ def _banner_lines(changes, meta):
     return out
 
 
+def _emergency_lines(display):
+    """Euphoria-valve lines for triggered checks only — empty (hidden) unless
+    price has run unusually far above its 200SMA."""
+    out = []
+    for e in display["emergency"]:
+        if e["triggered"]:
+            pct = (e["price"] / e["sma200"] - 1) * 100
+            out.append(f'🔥 {e["name"]}: {e["asset"]} {e["price"]:.2f} is {pct:+.1f}% above SMA200 (trigger +{e["threshold"] * 100:.0f}%)')
+    return out
+
+
 def _ladder(price, levels):
     """Render a mini-ladder: the group's levels plus the price, sorted high→low,
     with the price row marked. `levels` is a list of (label, value)."""
@@ -272,6 +308,14 @@ def _ladder(price, levels):
 
 def format_message(display, changes, meta):
     lines = []
+
+    # Emergency euphoria-valve banner — highest priority, above even the
+    # regular SIGNAL CHANGE banner. Hidden entirely unless triggered.
+    emergency = _emergency_lines(display)
+    if emergency:
+        lines.append("<b>🆘 EMERGENCY — EUPHORIA VALVE</b>")
+        lines += emergency
+        lines.append("")
 
     # Big attention banner at the very top on actionable changes. Being first,
     # it also becomes the phone's notification preview.

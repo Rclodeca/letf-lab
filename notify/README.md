@@ -82,6 +82,13 @@ Edit `watchlist.py`:
   engine's indicator types: `SMA_GATE`, `EMA_GATE`, `VOL_GATE`, `AR1_GATE`).
 - `TRAFFIC_LIGHTS` — add/remove 3-state SMA-200 lights (`upper`/`lower` multiply
   the SMA200 to set the BUY/SELL bands, e.g. `1.04` = +4%, `0.97` = −3%).
+- `DUAL_GATES` — AND-combined multi-asset gates (risk-on only when every listed
+  indicator passes, each on its own asset), e.g. the Golden Ratio SPY+TIP
+  de-lever signal. Also renders a raw band-values block per indicator.
+- `EMERGENCY` — euphoria-valve guards (`threshold` = how far above its own
+  200SMA an asset must run to trip). Normally invisible; a triggered check
+  shows a `🆘 EMERGENCY` banner at the very top of the message, above the
+  regular signal-change banner.
 - `RAW_ASSETS` — which tickers get a raw-values block.
 
 No other file needs to change.
