@@ -145,14 +145,20 @@ def compute():
     for asset in RAW_ASSETS:
         prices = prices_by_asset[asset]
         returns = prices.pct_change()
+        sma250 = _sma(prices, 250)
+        sma100 = _sma(prices, 100)
         sma200 = _sma(prices, 200)
         display["raw"].append(
             {
                 "asset": asset,
                 "price": _latest(prices),
                 "pct": _pct_day_change(prices),
-                "sma250": _sma(prices, 250),
-                "sma100": _sma(prices, 100),
+                "sma250": sma250,
+                "sma250_up": sma250 * 1.05 if sma250 is not None else None,
+                "sma250_dn": sma250 * 0.95 if sma250 is not None else None,
+                "sma100": sma100,
+                "sma100_up": sma100 * 1.05 if sma100 is not None else None,
+                "sma100_dn": sma100 * 0.95 if sma100 is not None else None,
                 "sma200": sma200,
                 "band_up": sma200 * 1.04 if sma200 is not None else None,
                 "band_dn": sma200 * 0.97 if sma200 is not None else None,
@@ -244,8 +250,14 @@ def format_message(display, changes, meta):
     for rv in display["raw"]:
         pct = f'{rv["pct"]:+.2f}%' if rv["pct"] is not None else "n/a"
         block.append(f'{rv["asset"]}   ({pct})')
-        block.append("  vote-of-2 SMAs")
-        block += _ladder(rv["price"], [("SMA100", rv["sma100"]), ("SMA250", rv["sma250"])])
+        block.append("  vote-of-2 SMAs (±5% band)")
+        block += _ladder(
+            rv["price"],
+            [
+                ("SMA100 +5%", rv["sma100_up"]), ("SMA100", rv["sma100"]), ("SMA100 -5%", rv["sma100_dn"]),
+                ("SMA250 +5%", rv["sma250_up"]), ("SMA250", rv["sma250"]), ("SMA250 -5%", rv["sma250_dn"]),
+            ],
+        )
         block.append("  vote-of-2 vol / mom")
         vol = f'{rv["vol21"] * 100:.2f}%' if rv["vol21"] is not None else "n/a"
         ar1 = f'{rv["ar1"]:+.3f}' if rv["ar1"] is not None else "n/a"
