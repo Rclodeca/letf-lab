@@ -1,12 +1,14 @@
 name: Daily LETF signals
 
 on:
-  # 22:00 UTC on weekdays. This is after the US market close year-round:
+  # ~22:00 UTC on weekdays. This is after the US market close year-round:
   # 18:00 ET during EDT, 17:00 ET during EST. GitHub cron has no timezone,
   # so this fixed UTC time drifts by an hour across DST but always lands
   # after the 16:00 ET close. Adjust if you want a specific ET time.
+  # Offset 7 minutes past the hour: GitHub Actions scheduled triggers are
+  # more prone to delay/drop right on the hour (documented high-load time).
   schedule:
-    - cron: "0 22 * * 1-5"
+    - cron: "7 22 * * 1-5"
   # Manual trigger for testing.
   workflow_dispatch:
 
