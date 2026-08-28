@@ -5,10 +5,17 @@ on:
   # 18:00 ET during EDT, 17:00 ET during EST. GitHub cron has no timezone,
   # so this fixed UTC time drifts by an hour across DST but always lands
   # after the 16:00 ET close. Adjust if you want a specific ET time.
-  # Offset 7 minutes past the hour: GitHub Actions scheduled triggers are
-  # more prone to delay/drop right on the hour (documented high-load time).
+  #
+  # Two staggered triggers, not one: GitHub's schedule event is best-effort
+  # and has been observed to silently drop entirely (no queued/failed run,
+  # no error) on separate days even after moving off the top of the hour.
+  # A second trigger 20 minutes later gives a fallback if the first is
+  # dropped. notify.daily_signals dedupes on the trading-day date already
+  # recorded in state, so a normal day where both fire still sends exactly
+  # one Telegram message.
   schedule:
     - cron: "7 22 * * 1-5"
+    - cron: "27 22 * * 1-5"
   # Manual trigger for testing.
   workflow_dispatch:
 

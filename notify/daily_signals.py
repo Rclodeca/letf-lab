@@ -246,11 +246,11 @@ def compute():
     return signals, display, meta
 
 
-def load_prev_signals():
+def load_prev_state():
     if not STATE_PATH.exists():
         return {}
     try:
-        return json.loads(STATE_PATH.read_text()).get("signals", {})
+        return json.loads(STATE_PATH.read_text())
     except Exception:
         return {}
 
@@ -415,14 +415,28 @@ def main():
         action="store_true",
         help="print the message to stdout; do not send to Telegram or save state",
     )
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="send even if state already shows a notification for today's trading date",
+    )
     args = ap.parse_args()
 
+    prev_state = load_prev_state()
     signals, display, meta = compute()
-    changes = diff_signals(load_prev_signals(), signals)
+    changes = diff_signals(prev_state.get("signals", {}), signals)
     message = format_message(display, changes, meta)
 
     if args.dry_run:
         print(message)
+        return 0
+
+    # The workflow fires two staggered schedule triggers per day as a
+    # fallback against GitHub's schedule event silently dropping (see
+    # daily-signals.yml). On a normal day both fire and reach here with the
+    # same trading date, so skip the second to avoid a duplicate message.
+    if not args.force and display["date"] and display["date"] == prev_state.get("date"):
+        print(f"Already notified for {display['date']}; skipping duplicate send.")
         return 0
 
     send_telegram(message)
