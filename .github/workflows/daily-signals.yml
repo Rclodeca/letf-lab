@@ -18,6 +18,11 @@ on:
     - cron: "27 22 * * 1-5"
   # Manual trigger for testing.
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Send even if already notified for today's trading date (bypasses the dedup guard)"
+        type: boolean
+        default: false
 
 # Needed so the job can commit the updated state file back to the repo.
 permissions:
@@ -57,7 +62,7 @@ jobs:
           key: price-cache-v1
 
       - name: Compute signals and notify
-        run: python -m notify.daily_signals
+        run: python -m notify.daily_signals ${{ inputs.force && '--force' || '' }}
 
       - name: Commit updated state
         run: |
