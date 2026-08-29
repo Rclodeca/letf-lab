@@ -374,7 +374,7 @@ def format_message(display, changes, meta):
         for gate_name, rows in by_gate.items():
             block.append(gate_name)
             for rv in rows:
-                pct = f'{rv["threshold"] * 100:.1f}%'
+                pct = f'{rv["threshold"] * 100:.2f}%'
                 block.append(f'  {rv["asset"]}  SMA{rv["period"]} (±{pct} band)')
                 block += _ladder(
                     rv["price"],
