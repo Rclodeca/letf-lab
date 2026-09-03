@@ -123,3 +123,12 @@ def compute_allocation(closes: pd.DataFrame) -> dict:
 
 def alloc_str(allocation: dict) -> str:
     return ", ".join(f"{t} {round(w * 100)}%" for t, w in sorted(allocation.items(), key=lambda kv: -kv[1]))
+
+
+def last_completed_rebalance_date(closes: pd.DataFrame):
+    """Last trading day strictly before the current calendar month — i.e. the
+    month-end close that decided the allocation still active today. None if
+    `closes` doesn't yet span a prior month."""
+    current_period = closes.index.max().to_period("M")
+    prior = closes.index[closes.index.to_period("M") < current_period]
+    return prior.max() if len(prior) else None

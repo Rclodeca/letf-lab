@@ -248,24 +248,38 @@ def compute():
         )
 
     # 5. Monthly "3-of-5" momentum rotation. No risk-on/off boolean here —
-    # the "signal" is just which 1-3 tickers are selected this month and how
-    # they're weighted, so the diffable state is the rendered allocation
-    # string itself (banner fires when it changes, i.e. an actual rebalance).
+    # two allocations are tracked: the CURRENT one (decided at last month's
+    # close, held fixed all month — this is what's actually invested) and a
+    # daily-recalculated PREVIEW of what next month's rebalance would be if
+    # the month ended today. Only the current allocation is diffable/banner-
+    # worthy — it changes exactly once a month, on an actual rebalance; the
+    # preview naturally wiggles day to day and would just be banner noise.
     if ROTATION_STRATEGIES:
         rot_closes = pd.concat(
             {t: prices_by_asset[t] for t in rot.UNIVERSE + [rot.CASH]}, axis=1, sort=True
         ).dropna()
+        last_month_end = rot.last_completed_rebalance_date(rot_closes)
         for spec in ROTATION_STRATEGIES:
             try:
-                r = rot.compute_allocation(rot_closes)
+                preview = rot.compute_allocation(rot_closes)
+                current = (
+                    rot.compute_allocation(rot_closes.loc[:last_month_end])
+                    if last_month_end is not None else preview
+                )
             except ValueError as exc:  # not enough trailing history yet
                 print(f"warn: rotation strategy {spec['name']} skipped: {exc}", file=sys.stderr)
                 continue
-            alloc = rot.alloc_str(r["allocation"])
+            current_alloc = rot.alloc_str(current["allocation"])
+            preview_alloc = rot.alloc_str(preview["allocation"])
             key = spec["key"]
-            signals[key] = alloc
+            signals[key] = current_alloc
             meta[key] = {"label": spec["name"], "kind": "allocation"}
-            display["rotation"].append({"name": spec["name"], "allocation": alloc, "top5": r["ranking"][:5]})
+            display["rotation"].append({
+                "name": spec["name"],
+                "current_allocation": current_alloc,
+                "preview_allocation": preview_alloc,
+                "top5": preview["ranking"][:5],
+            })
 
     return signals, display, meta
 
@@ -364,7 +378,9 @@ def format_message(display, changes, meta):
         lines.append(f'{lt["name"]}  {LIGHT_EMOJI[lt["state"]]} {lt["state"]}')
 
     for rt in display["rotation"]:
-        lines.append(f'{rt["name"]}  →  {rt["allocation"]}')
+        lines.append(rt["name"])
+        lines.append(f'  Current  →  {rt["current_allocation"]}')
+        lines.append(f'  Preview  →  {rt["preview_allocation"]}')
 
     # Raw values panel — monospace (<pre>) so the ladders align. Two groups per
     # asset: the vote-of-2 trend SMAs, and the 200SMA traffic-light bands.
