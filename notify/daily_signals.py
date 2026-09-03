@@ -29,13 +29,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import pandas as pd
 
 from ai_swing.data import get_price_service
 from ai_swing.db.models import IndicatorType
 from ai_swing.indicators import functions as F
 from ai_swing.indicators.evaluator import evaluate_indicator
+from ai_swing.scoring import rotation_3of5 as rot
 
-from notify.watchlist import DUAL_GATES, EMERGENCY, RAW_ASSETS, STRATEGIES, TRAFFIC_LIGHTS
+from notify.watchlist import DUAL_GATES, EMERGENCY, RAW_ASSETS, ROTATION_STRATEGIES, STRATEGIES, TRAFFIC_LIGHTS
 
 STATE_PATH = Path(__file__).parent / "state" / "last_signals.json"
 CHECK, CROSS = "✓", "✗"
@@ -84,6 +86,7 @@ def compute():
         | {i["asset"] for g in DUAL_GATES for i in g["indicators"]}
         | {e["asset"] for e in EMERGENCY}
         | set(RAW_ASSETS)
+        | set(rot.UNIVERSE) | {rot.CASH}
     )
     prices_by_asset = {}
     for asset in sorted(assets):
@@ -95,7 +98,8 @@ def compute():
 
     signals = {}
     meta = {}
-    display = {"date": None, "strategies": [], "lights": [], "raw": [], "dual_gate_raw": [], "emergency": []}
+    display = {"date": None, "strategies": [], "lights": [], "raw": [], "dual_gate_raw": [],
+               "emergency": [], "rotation": []}
 
     # 1. Standard vote-of-k signals (SPY, QQQ).
     for spec in STRATEGIES:
@@ -243,6 +247,26 @@ def compute():
             }
         )
 
+    # 5. Monthly "3-of-5" momentum rotation. No risk-on/off boolean here —
+    # the "signal" is just which 1-3 tickers are selected this month and how
+    # they're weighted, so the diffable state is the rendered allocation
+    # string itself (banner fires when it changes, i.e. an actual rebalance).
+    if ROTATION_STRATEGIES:
+        rot_closes = pd.concat(
+            {t: prices_by_asset[t] for t in rot.UNIVERSE + [rot.CASH]}, axis=1, sort=True
+        ).dropna()
+        for spec in ROTATION_STRATEGIES:
+            try:
+                r = rot.compute_allocation(rot_closes)
+            except ValueError as exc:  # not enough trailing history yet
+                print(f"warn: rotation strategy {spec['name']} skipped: {exc}", file=sys.stderr)
+                continue
+            alloc = rot.alloc_str(r["allocation"])
+            key = spec["key"]
+            signals[key] = alloc
+            meta[key] = {"label": spec["name"], "kind": "allocation"}
+            display["rotation"].append({"name": spec["name"], "allocation": alloc, "top5": r["ranking"][:5]})
+
     return signals, display, meta
 
 
@@ -279,6 +303,8 @@ def _banner_lines(changes, meta):
         elif kind == "light" and new in ("BUY", "SELL"):
             arrow = f"{LIGHT_EMOJI[old]} → {LIGHT_EMOJI[new]}"
             out.append(f'{arrow}  {info.get("label", key)} now {new}')
+        elif kind == "allocation":
+            out.append(f'🔄 {info.get("label", key)} reallocated: {old} → {new}')
     return out
 
 
@@ -337,6 +363,9 @@ def format_message(display, changes, meta):
     for lt in display["lights"]:
         lines.append(f'{lt["name"]}  {LIGHT_EMOJI[lt["state"]]} {lt["state"]}')
 
+    for rt in display["rotation"]:
+        lines.append(f'{rt["name"]}  →  {rt["allocation"]}')
+
     # Raw values panel — monospace (<pre>) so the ladders align. Two groups per
     # asset: the vote-of-2 trend SMAs, and the 200SMA traffic-light bands.
     lines.append("")
@@ -385,6 +414,13 @@ def format_message(display, changes, meta):
                     ],
                 )
             block.append("")
+
+    for rt in display["rotation"]:
+        block.append(f'{rt["name"]} — momentum (top 5)')
+        for row in rt["top5"]:
+            block.append(f'  {row["ticker"]:<6} {row["score"]:.4f}')
+        block.append("")
+
     lines.append("<pre>" + "\n".join(block).rstrip() + "</pre>")
 
     return "\n".join(lines)
