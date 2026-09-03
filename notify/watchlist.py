@@ -65,3 +65,15 @@ EMERGENCY = [
 
 # Assets to print raw values for (price, day change, SMA250/100/200, +4%/-3% bands).
 RAW_ASSETS = ["SPY", "QQQ"]
+
+# Monthly "3-of-5" momentum rotation. Unlike the gate strategies above, this
+# doesn't reduce to a risk-on/off boolean — it's a 14-asset momentum rank,
+# dual-momentum filter vs. BIL, then least-correlated-trio selection. The
+# actual algorithm lives in ai_swing.scoring.rotation_3of5 (shared with
+# research/momentum_rotation_3of5.py so the numbers match exactly); this
+# entry just tells the notifier to compute and display it. Recomputed daily
+# from the same trailing-return windows, but only "actionable" (banner-worthy)
+# on days the selected tickers/allocation actually change.
+ROTATION_STRATEGIES = [
+    {"name": "3-of-5 Rotation", "key": "rotation_3of5_signal"},
+]
