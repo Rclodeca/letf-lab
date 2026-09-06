@@ -34,14 +34,14 @@ def rebalance_dates(index, anchor_shift_days):
     return index.to_series().groupby(shifted).max()
 
 
-def run_strategy(closes, trade_rets, score_universe, compute_allocation_fn, min_history, anchor_shift_days):
+def run_strategy(closes, trade_rets, score_universe, compute_allocation_fn, anchor_shift_days):
     score_closes = closes[score_universe]
     checkpoints = rebalance_dates(score_closes.index, anchor_shift_days)
 
     alloc_by_date = {}
     for d in checkpoints:
         sub = score_closes.loc[:d]
-        if len(sub) < min_history:
+        if not rot.has_enough_history(sub):
             continue
         alloc_by_date[d] = compute_allocation_fn(sub)["allocation"]
 
@@ -74,11 +74,11 @@ def main():
     closes = pd.concat({t: series(ps, t) for t in all_tickers}, axis=1, sort=True).dropna()
     trade_rets = closes.pct_change().fillna(0.0)
 
-    min_history = max(rot.RETURN_OFFSETS) + 1
+    MID_MONTH_ANCHOR_SHIFT_DAYS = 15  # frozen experiment param -- HAA no longer runs mid-month live, see conversation history
 
-    triplet_eq = run_strategy(closes, trade_rets, triplet_universe, rot.compute_allocation, min_history, anchor_shift_days=0)
-    haa_eq_monthend = run_strategy(closes, trade_rets, haa_universe, haa.compute_allocation, min_history, anchor_shift_days=0)
-    haa_eq_midmonth = run_strategy(closes, trade_rets, haa_universe, haa.compute_allocation, min_history, anchor_shift_days=haa.CHECKPOINT_ANCHOR_SHIFT_DAYS)
+    triplet_eq = run_strategy(closes, trade_rets, triplet_universe, rot.compute_allocation, anchor_shift_days=0)
+    haa_eq_monthend = run_strategy(closes, trade_rets, haa_universe, haa.compute_allocation, anchor_shift_days=0)
+    haa_eq_midmonth = run_strategy(closes, trade_rets, haa_universe, haa.compute_allocation, anchor_shift_days=MID_MONTH_ANCHOR_SHIFT_DAYS)
 
     common_start = max(triplet_eq.index[0], haa_eq_monthend.index[0], haa_eq_midmonth.index[0])
     triplet_eq = triplet_eq.loc[common_start:] / triplet_eq.loc[common_start]

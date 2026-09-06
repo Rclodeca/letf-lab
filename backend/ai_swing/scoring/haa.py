@@ -1,10 +1,15 @@
 """Core selection logic for the Hybrid Asset Allocation (HAA) strategy.
 
-Shares the same 1/3/6/12-month equal-weighted momentum score as the 3-of-5
-rotation strategy (`ai_swing.scoring.rotation_3of5.score`) -- referred to
-here as "13612 equal-weighted" to distinguish it from Keller & Keuning's
-original weighted 13612W formula (12/4/2/1 on 1/3/6/12mo), which this does
-NOT use.
+Uses the same four legs (1/3/6/12 calendar months) and lookback mechanics
+as the 3-of-5 rotation strategy, but a DIFFERENT aggregation: this module's
+own score() SUMS the four legs, where rotation_3of5.score() AVERAGES them.
+Both conventions were reverse engineered independently against a
+third-party TAA site's published numbers for each strategy and confirmed
+to a decisive margin (see conversation history) -- the site genuinely uses
+two different momentum formulas for these two strategies, not the same one
+inconsistently. Referred to here as "13612 (unweighted sum)" to distinguish
+from Keller & Keuning's original WEIGHTED 13612W formula (12/4/2/1 on
+1/3/6/12mo), which this does NOT use.
 
 Algorithm, evaluated at each month-end:
   1. Canary: is TIP's score positive?
@@ -35,7 +40,14 @@ TLT is offensive-only, never a defensive destination.
 """
 import pandas as pd
 
-from .rotation_3of5 import RETURN_OFFSETS, alloc_str, last_completed_rebalance_date, score
+from .rotation_3of5 import (
+    MIN_HISTORY_DAYS,
+    MONTHS_BACK,
+    alloc_str,
+    has_enough_history,
+    last_completed_rebalance_date,
+    price_months_ago,
+)
 
 CANARY = "TIP"
 CASH = "BIL"  # fixed absolute-momentum hurdle for the offensive filter
@@ -59,14 +71,23 @@ SUBSTITUTE = {
 }
 
 
+def score(prices: pd.Series) -> float:
+    """sum(1m, 3m, 6m, 12m trailing return) as of the last row of `prices`,
+    each leg measured over actual calendar months -- deliberately a SUM,
+    not rotation_3of5.score()'s average; see module docstring."""
+    last = prices.iloc[-1]
+    return sum(last / price_months_ago(prices, m) - 1 for m in MONTHS_BACK)
+
+
 def compute_allocation(closes: pd.DataFrame) -> dict:
     """Run the canary -> rank -> select -> allocate pipeline as of the LAST
     row of `closes`. `closes` must have one column per ticker in
     OFFENSIVE_UNIVERSE + [CANARY] + DEFENSIVE_CANDIDATES (IEF is shared
     between the offensive universe and the defensive pair, so it only needs
     one column)."""
-    if len(closes) < max(RETURN_OFFSETS) + 1:
-        raise ValueError(f"need >= {max(RETURN_OFFSETS) + 1} rows, got {len(closes)}")
+    if not has_enough_history(closes):
+        span = (closes.index[-1] - closes.index[0]).days
+        raise ValueError(f"need >= {MIN_HISTORY_DAYS} days of history, got {span}")
 
     as_of = closes.index.max().date()
 

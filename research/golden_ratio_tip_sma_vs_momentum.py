@@ -24,7 +24,12 @@ import pandas as pd
 from ai_swing.data import get_price_service
 from ai_swing.indicators import functions as F
 from ai_swing.backtest.metrics import cagr, max_drawdown, sortino, n_trades
-from ai_swing.scoring.rotation_3of5 import RETURN_OFFSETS
+
+# Frozen at the trading-day-offset convention this analysis was actually run
+# with -- ai_swing.scoring.rotation_3of5's own RETURN_OFFSETS has since been
+# replaced by calendar-month lookback (MONTHS_BACK), which isn't what this
+# script's momentum_score() implements below.
+RETURN_OFFSETS = (63, 126, 252)  # ~3m, ~6m, ~12m trading days
 
 ps = get_price_service()
 
