@@ -5,54 +5,6 @@ lists and reuses the LETF Lab engine to evaluate them, so the numbers always
 match the app.
 """
 
-# The 4 standard indicators, mirroring backend/scripts/seed.py. Applied to each
-# benchmark below to produce a vote-of-k signal.
-_STANDARD_INDICATORS = [
-    {"name": "SMA250", "type": "SMA_GATE", "params": {"period": 250, "threshold": 0.05}},
-    {"name": "SMA100", "type": "SMA_GATE", "params": {"period": 100, "threshold": 0.05}},
-    {"name": "Vol21d", "type": "VOL_GATE", "params": {"window": 21, "threshold": 0.40}},
-    {"name": "AR(1)", "type": "AR1_GATE", "params": {"window": 30, "threshold": 0.0}},
-]
-
-# Standard vote-of-2 signals to report. Signals compute on the benchmark ticker.
-STRATEGIES = [
-    {"name": "SPY", "benchmark": "SPY", "k": 2, "indicators": _STANDARD_INDICATORS},
-    {"name": "QQQ", "benchmark": "QQQ", "k": 2, "indicators": _STANDARD_INDICATORS},
-]
-
-# 3-state SMA-200 "traffic light" strategies. State is decided by the latest
-# close vs SMA200 bands:
-#   BUY  (green)  price > SMA200 * upper
-#   SELL (red)    price < SMA200 * lower
-#   HOLD (yellow) otherwise (inside the band)
-TRAFFIC_LIGHTS = [
-    {"name": "SPY 200SMA", "asset": "SPY", "key": "SPY_200sma", "upper": 1.04, "lower": 0.97},
-    {"name": "QQQ 200SMA", "asset": "QQQ", "key": "QQQ_200sma", "upper": 1.04, "lower": 0.97},
-]
-
-# AND-combined multi-asset gates: risk-on only when EVERY indicator passes,
-# each on its own asset. This is the r/LETFs "Golden Ratio" de-lever signal
-# (see research/golden_ratio_delever.py, variant C, and the robustness-grid
-# follow-up) — SPY 200SMA with a +/-1% hysteresis band AND TIP 200SMA with a
-# tighter +/-0.2% band. SPY's band was widened from 0.5% -> 1% after testing
-# showed 1% strictly dominates on CAGR/MaxDD/Sortino/trade-count. TIP's band
-# was widened from 0.1% -> 0.15% after research/golden_ratio_tip_band_compare.py
-# showed 0.15% strictly dominates 0.1% (same Sortino, slightly higher CAGR,
-# ~12% fewer trades, byte-identical 2022-bear behavior), then further to 0.2%.
-# TIP still stays comparatively tight because its signal is the primary
-# regime-read for slow bear markets (0.25%+ trades bear-market protection for
-# fewer whipsaws; 0.5%+ measurably hurts it).
-DUAL_GATES = [
-    {
-        "name": "Golden Ratio (SPY+TIP)",
-        "key": "golden_ratio_signal",
-        "indicators": [
-            {"asset": "SPY", "name": "SPY_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.01}},
-            {"asset": "TIP", "name": "TIP_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.002}},
-        ],
-    },
-]
-
 # Emergency euphoria-valve checks — a blow-off-top guard from the dot-com
 # backtest (research/synth_200sma_spy_tqqq_1995_euphoria.py): force attention
 # whenever price runs unusually far above its own 200SMA, regardless of what
@@ -63,19 +15,24 @@ EMERGENCY = [
     {"name": "SPY euphoria", "asset": "SPY", "threshold": 0.30},
 ]
 
-# Assets to print raw values for (price, day change, SMA250/100/200, +4%/-3% bands).
+# Assets to print the full raw snapshot for: day change, price, SMA100,
+# SMA200, and % above/below each SMA.
 RAW_ASSETS = ["SPY", "QQQ"]
 
-# Monthly "3-of-5" momentum rotation. Unlike the gate strategies above, this
-# doesn't reduce to a risk-on/off boolean — it's a 14-asset momentum rank,
-# dual-momentum filter vs. BIL, then least-correlated-trio selection. The
-# actual algorithm lives in ai_swing.scoring.rotation_3of5 (shared with
+# Assets to print the same raw snapshot for, minus the SMA100 line.
+RAW_ASSETS_200_ONLY = ["TIP"]
+
+# Monthly "Triplet" momentum rotation (3-of-5 selection from a 14-asset
+# universe). Unlike the gate strategies this replaced, it doesn't reduce to a
+# risk-on/off boolean — it's a 14-asset momentum rank, dual-momentum filter
+# vs. BIL, then least-correlated-trio selection. The actual algorithm lives
+# in ai_swing.scoring.rotation_3of5 (shared with
 # research/momentum_rotation_3of5.py so the numbers match exactly); this
 # entry just tells the notifier to compute and display it. Recomputed daily
 # from the same trailing-return windows, but only "actionable" (banner-worthy)
 # on days the selected tickers/allocation actually change.
 ROTATION_STRATEGIES = [
-    {"name": "3-of-5 Rotation", "key": "rotation_3of5_signal"},
+    {"name": "Triplet", "key": "rotation_3of5_signal"},
 ]
 
 # Monthly Hybrid Asset Allocation (HAA): TIP canary decides risk-on/off; when
@@ -85,7 +42,7 @@ ROTATION_STRATEGIES = [
 # scores higher. Algorithm lives in ai_swing.scoring.haa (shared with
 # research/haa.py, verified against 7 known reference months); this entry
 # just tells the notifier to compute and display it. Same month-end cadence
-# as the 3-of-5 rotation above (a staggered mid-month cadence was tested and
+# as the Triplet rotation above (a staggered mid-month cadence was tested and
 # rejected — see research/haa_triplet_combined.py — it hurt the combined
 # portfolio's COVID drawdown rather than adding resilience).
 HAA_STRATEGIES = [
