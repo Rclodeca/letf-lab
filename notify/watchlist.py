@@ -77,3 +77,17 @@ RAW_ASSETS = ["SPY", "QQQ"]
 ROTATION_STRATEGIES = [
     {"name": "3-of-5 Rotation", "key": "rotation_3of5_signal"},
 ]
+
+# Monthly Hybrid Asset Allocation (HAA): TIP canary decides risk-on/off; when
+# on, a 9-asset offensive universe is filtered by absolute momentum vs. BIL
+# and the top 4 survivors held equal-weight via their leveraged/substitute
+# funds; when off (or a slot's unfilled), allocated to whichever of IEF/BIL
+# scores higher. Algorithm lives in ai_swing.scoring.haa (shared with
+# research/haa.py, verified against 7 known reference months); this entry
+# just tells the notifier to compute and display it. Same month-end cadence
+# as the 3-of-5 rotation above (a staggered mid-month cadence was tested and
+# rejected — see research/haa_triplet_combined.py — it hurt the combined
+# portfolio's COVID drawdown rather than adding resilience).
+HAA_STRATEGIES = [
+    {"name": "HAA", "key": "haa_signal"},
+]
