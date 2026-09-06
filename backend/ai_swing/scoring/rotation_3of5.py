@@ -28,16 +28,43 @@ LEVERAGE_MAP = {
     "VNQ": ("URE", 2),
 }
 
-RETURN_OFFSETS = (21, 63, 126, 252)  # ~1m, ~3m, ~6m, ~12m trading days
+MONTHS_BACK = (1, 3, 6, 12)  # calendar months, not trading days -- see score()
 CORR_LOOKBACK_DAYS = 252
 TOP_N_CANDIDATES = 5
 PORTFOLIO_SLOTS = 3
 
+# Minimum calendar-day span of history needed to compute every leg in
+# MONTHS_BACK (12 months + a buffer for the lookup below to find a trading
+# day on/before the 12-month-ago target even across long holiday gaps).
+MIN_HISTORY_DAYS = 366
+
+
+def has_enough_history(closes) -> bool:
+    """True if `closes` (a Series or DataFrame with a DatetimeIndex) spans
+    enough calendar time to compute every MONTHS_BACK leg."""
+    return (closes.index[-1] - closes.index[0]).days >= MIN_HISTORY_DAYS
+
+
+def price_months_ago(prices: pd.Series, months: int) -> float:
+    """Price on the last trading day on/before `months` calendar months
+    before the last date in `prices`. Reverse engineered from a third-party
+    TAA backtesting site's numbers (see conversation history) -- it uses
+    actual calendar-month lookback, not a fixed trading-day count. Shared
+    with ai_swing.scoring.haa, which builds its own differently-aggregated
+    score() on top of the same lookback mechanics -- see that module's
+    docstring for why the two strategies' formulas deliberately diverge."""
+    target = prices.index[-1] - pd.DateOffset(months=months)
+    idx = prices.index[prices.index <= target]
+    return prices.loc[idx[-1]]
+
 
 def score(prices: pd.Series) -> float:
-    """avg(1m, 3m, 6m, 12m trailing return) as of the last row of `prices`."""
+    """avg(1m, 3m, 6m, 12m trailing return) as of the last row of `prices`,
+    each leg measured over actual calendar months (not a fixed trading-day
+    count) -- confirmed by matching a third-party TAA site's published
+    numbers to within rounding across two independent checkpoint dates."""
     last = prices.iloc[-1]
-    return sum(last / prices.iloc[-1 - k] - 1 for k in RETURN_OFFSETS) / len(RETURN_OFFSETS)
+    return sum(last / price_months_ago(prices, m) - 1 for m in MONTHS_BACK) / len(MONTHS_BACK)
 
 
 def avg_pairwise_corr(returns: pd.DataFrame, tickers) -> float:
@@ -75,8 +102,9 @@ def compute_allocation(closes: pd.DataFrame) -> dict:
     as of the LAST row of `closes` (caller controls the cutoff, so this same
     function serves both "today" and "as of some past month-end"). `closes`
     must have one column per ticker in UNIVERSE + [CASH]."""
-    if len(closes) < max(RETURN_OFFSETS) + 1:
-        raise ValueError(f"need >= {max(RETURN_OFFSETS) + 1} rows, got {len(closes)}")
+    if not has_enough_history(closes):
+        span = (closes.index[-1] - closes.index[0]).days
+        raise ValueError(f"need >= {MIN_HISTORY_DAYS} days of history, got {span}")
 
     as_of = closes.index.max().date()
     scores = {t: float(score(closes[t])) for t in closes.columns}

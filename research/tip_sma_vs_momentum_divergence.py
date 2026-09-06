@@ -12,13 +12,16 @@ import numpy as np
 import pandas as pd
 
 from ai_swing.data import get_price_service
-from ai_swing.scoring.rotation_3of5 import RETURN_OFFSETS
 
 ps = get_price_service()
 tip = ps.get_close_series("TIP")
 
 SMA_PERIOD = 200
-MOM_OFFSETS = (21,) + RETURN_OFFSETS  # 1/3/6/12m
+# Frozen at the trading-day-offset convention this analysis was actually run
+# with -- ai_swing.scoring.rotation_3of5's own RETURN_OFFSETS has since been
+# replaced by calendar-month lookback (MONTHS_BACK), which isn't what this
+# script's momentum_score() implements below.
+MOM_OFFSETS = (21, 63, 126, 252)  # 1/3/6/12m trading days
 
 
 def momentum_score(prices, offsets):

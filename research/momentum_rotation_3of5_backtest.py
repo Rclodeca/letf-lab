@@ -20,7 +20,7 @@ import pandas as pd
 
 from ai_swing.backtest.metrics import cagr, max_drawdown, sortino
 from ai_swing.data import get_price_service
-from ai_swing.scoring.rotation_3of5 import CASH, LEVERAGE_MAP, RETURN_OFFSETS, UNIVERSE, alloc_str, compute_allocation
+from ai_swing.scoring.rotation_3of5 import CASH, LEVERAGE_MAP, UNIVERSE, alloc_str, compute_allocation, has_enough_history
 
 BENCHMARK = "SPY"
 
@@ -39,13 +39,12 @@ def run_backtest():
     trade_rets = closes.pct_change().fillna(0.0)
 
     by_month = score_closes.index.to_series().groupby(score_closes.index.to_period("M")).max()
-    min_history = max(RETURN_OFFSETS) + 1
 
     alloc_by_date = {}
     log_rows = []
     for d in by_month:
         sub = score_closes.loc[:d]
-        if len(sub) < min_history:
+        if not has_enough_history(sub):
             continue
         r = compute_allocation(sub)
         alloc_by_date[d] = r["allocation"]
