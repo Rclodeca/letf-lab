@@ -28,14 +28,14 @@ LEVERAGE_MAP = {
     "VNQ": ("URE", 2),
 }
 
-RETURN_OFFSETS = (63, 126, 252)  # ~3m, ~6m, ~12m trading days
+RETURN_OFFSETS = (21, 63, 126, 252)  # ~1m, ~3m, ~6m, ~12m trading days
 CORR_LOOKBACK_DAYS = 252
 TOP_N_CANDIDATES = 5
 PORTFOLIO_SLOTS = 3
 
 
 def score(prices: pd.Series) -> float:
-    """avg(3m, 6m, 12m trailing return) as of the last row of `prices`."""
+    """avg(1m, 3m, 6m, 12m trailing return) as of the last row of `prices`."""
     last = prices.iloc[-1]
     return sum(last / prices.iloc[-1 - k] - 1 for k in RETURN_OFFSETS) / len(RETURN_OFFSETS)
 

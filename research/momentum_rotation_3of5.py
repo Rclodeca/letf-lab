@@ -1,7 +1,7 @@
 """Monthly "3-of-5" LETF rotation strategy — logic only, no backtest yet.
 
 At the end of each month:
-  1. Score 14 candidate assets by avg(3m, 6m, 12m trailing returns).
+  1. Score 14 candidate assets by avg(1m, 3m, 6m, 12m trailing returns).
   2. Dual-momentum filter: drop anything that doesn't beat BIL (cash) on the
      same score, then take the top 5 of whatever survives.
   3. Enumerate every C(n,3) combination of the survivors (n = len(candidates),

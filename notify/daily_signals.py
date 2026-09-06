@@ -35,9 +35,18 @@ from ai_swing.data import get_price_service
 from ai_swing.db.models import IndicatorType
 from ai_swing.indicators import functions as F
 from ai_swing.indicators.evaluator import evaluate_indicator
+from ai_swing.scoring import haa
 from ai_swing.scoring import rotation_3of5 as rot
 
-from notify.watchlist import DUAL_GATES, EMERGENCY, RAW_ASSETS, ROTATION_STRATEGIES, STRATEGIES, TRAFFIC_LIGHTS
+from notify.watchlist import (
+    DUAL_GATES,
+    EMERGENCY,
+    HAA_STRATEGIES,
+    RAW_ASSETS,
+    ROTATION_STRATEGIES,
+    STRATEGIES,
+    TRAFFIC_LIGHTS,
+)
 
 STATE_PATH = Path(__file__).parent / "state" / "last_signals.json"
 CHECK, CROSS = "✓", "✗"
@@ -87,6 +96,7 @@ def compute():
         | {e["asset"] for e in EMERGENCY}
         | set(RAW_ASSETS)
         | set(rot.UNIVERSE) | {rot.CASH}
+        | set(haa.OFFENSIVE_UNIVERSE) | {haa.CANARY} | set(haa.DEFENSIVE_CANDIDATES)
     )
     prices_by_asset = {}
     for asset in sorted(assets):
@@ -99,7 +109,7 @@ def compute():
     signals = {}
     meta = {}
     display = {"date": None, "strategies": [], "lights": [], "raw": [], "dual_gate_raw": [],
-               "emergency": [], "rotation": []}
+               "emergency": [], "rotation": [], "haa": []}
 
     # 1. Standard vote-of-k signals (SPY, QQQ).
     for spec in STRATEGIES:
@@ -281,6 +291,39 @@ def compute():
                 "top5": preview["ranking"][:5],
             })
 
+    # 6. Monthly HAA (Hybrid Asset Allocation). Same current/preview split as
+    # the 3-of-5 rotation above, same month-end cadence — CURRENT is decided
+    # at last month's close and held fixed all month; PREVIEW is a daily
+    # recalculation of what the next rebalance would be if the month ended
+    # today.
+    if HAA_STRATEGIES:
+        haa_universe = sorted(set(haa.OFFENSIVE_UNIVERSE) | {haa.CANARY} | set(haa.DEFENSIVE_CANDIDATES))
+        haa_closes = pd.concat(
+            {t: prices_by_asset[t] for t in haa_universe}, axis=1, sort=True
+        ).dropna()
+        last_month_end = rot.last_completed_rebalance_date(haa_closes)
+        for spec in HAA_STRATEGIES:
+            try:
+                preview = haa.compute_allocation(haa_closes)
+                current = (
+                    haa.compute_allocation(haa_closes.loc[:last_month_end])
+                    if last_month_end is not None else preview
+                )
+            except ValueError as exc:  # not enough trailing history yet
+                print(f"warn: HAA strategy {spec['name']} skipped: {exc}", file=sys.stderr)
+                continue
+            current_alloc = rot.alloc_str(current["allocation"])
+            preview_alloc = rot.alloc_str(preview["allocation"])
+            key = spec["key"]
+            signals[key] = current_alloc
+            meta[key] = {"label": spec["name"], "kind": "allocation"}
+            display["haa"].append({
+                "name": spec["name"],
+                "current_allocation": current_alloc,
+                "preview_allocation": preview_alloc,
+                "top4": preview["offensive_ranking"][:haa.TOP_N],
+            })
+
     return signals, display, meta
 
 
@@ -382,6 +425,11 @@ def format_message(display, changes, meta):
         lines.append(f'  Current  →  {rt["current_allocation"]}')
         lines.append(f'  Preview  →  {rt["preview_allocation"]}')
 
+    for rt in display["haa"]:
+        lines.append(rt["name"])
+        lines.append(f'  Current  →  {rt["current_allocation"]}')
+        lines.append(f'  Preview  →  {rt["preview_allocation"]}')
+
     # Raw values panel — monospace (<pre>) so the ladders align. Two groups per
     # asset: the vote-of-2 trend SMAs, and the 200SMA traffic-light bands.
     lines.append("")
@@ -434,6 +482,12 @@ def format_message(display, changes, meta):
     for rt in display["rotation"]:
         block.append(f'{rt["name"]} — momentum (top 5)')
         for row in rt["top5"]:
+            block.append(f'  {row["ticker"]:<6} {row["score"]:.4f}')
+        block.append("")
+
+    for rt in display["haa"]:
+        block.append(f'{rt["name"]} — momentum (top 4)')
+        for row in rt["top4"]:
             block.append(f'  {row["ticker"]:<6} {row["score"]:.4f}')
         block.append("")
 
