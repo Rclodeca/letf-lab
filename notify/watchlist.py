@@ -70,3 +70,28 @@ SWITCH_STRATEGIES = [
         "qqq_cash_threshold": 0.40,
     },
 ]
+
+# Daily "SQQQ Overextension": holds TQQQ, flips to SQQQ on a melt-up (close
+# 55% above its own 250-day median), and to cash on a *confirmed* breakdown —
+# close 28% below the median AND the median's own trend has stalled (63-day
+# annualized slope under +20%/yr) AND the close has spent 10+ straight days
+# below the median. Recovery from cash needs only a single close back above
+# the exit line (median * (1 + exit_pct)) — asymmetric on purpose: slow,
+# confirmed entry into cash; fast exit. The melt-up (over) state resolves the
+# same way every day (no separate hysteresis): back to TQQQ as soon as price
+# is no longer above the melt-up line. Mirrors defaults of the reference
+# "Median overextension with SQQQ and crash exit" backtest config.
+OVEREXTENSION_STRATEGIES = [
+    {
+        "name": "SQQQ Overextension",
+        "key": "sqqq_overextension_signal",
+        "asset": "TQQQ",
+        "median_window": 250,
+        "over_pct": 0.55,
+        "over_asset": "SQQQ",
+        "exit_pct": -0.28,
+        "slope_window": 63,
+        "slope_gate_pct": 0.20,
+        "below_gate_days": 10,
+    },
+]
