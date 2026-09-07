@@ -1,7 +1,8 @@
 """Daily LETF signal notifier.
 
-Computes the Triplet (3-of-5 momentum rotation) and HAA allocations, a
-simple SPY/QQQ/TIP price-and-SMA raw-values panel, and a
+Computes the Triplet (3-of-5 momentum rotation) and HAA allocations, the
+SPY 200SMA Switch (buffered TQQQ/QQQ band strategy with a QQQ-euphoria
+guard), a simple SPY/QQQ/TIP price-and-SMA raw-values panel, and a
 hidden-unless-triggered emergency euphoria-valve check — all defined in
 watchlist.py — diffs the discrete states against the previous run, and
 pushes a summary to Telegram.
@@ -40,9 +41,14 @@ from notify.watchlist import (
     RAW_ASSETS,
     RAW_ASSETS_200_ONLY,
     ROTATION_STRATEGIES,
+    SWITCH_STRATEGIES,
 )
 
 STATE_PATH = Path(__file__).parent / "state" / "last_signals.json"
+
+# Display labels/emoji for the SPY 200SMA Switch's 3 states.
+SWITCH_LABEL = {"TQQQ": "Risk on", "QQQ": "Risk off", "CASH": "EMERGENCY CASH"}
+SWITCH_EMOJI = {"TQQQ": "🟢", "QQQ": "🟡", "CASH": "🆘"}
 
 
 def _latest(series):
@@ -67,13 +73,17 @@ def _pct_day_change(prices):
     return (float(s.iloc[-1]) / float(s.iloc[-2]) - 1) * 100.0
 
 
-def compute():
+def compute(prev_signals=None):
     """Return (signals, display, meta).
 
+    prev_signals : dict[str, bool|str] — yesterday's saved signals; used by the
+                   SPY 200SMA Switch to know what position to hold when SPY
+                   sits between its bands.
     signals : dict[str, bool|str]  — the discrete states, keyed for diffing.
     display : dict                 — structured data for message formatting.
     meta    : dict[str, dict]      — per-key {label, kind} for rendering changes.
     """
+    prev_signals = prev_signals or {}
     ps = get_price_service()
 
     # Prime + fetch each unique asset once. refresh() pulls recent bars (incl.
@@ -84,6 +94,7 @@ def compute():
         | set(RAW_ASSETS) | set(RAW_ASSETS_200_ONLY)
         | set(rot.UNIVERSE) | {rot.CASH}
         | set(haa.OFFENSIVE_UNIVERSE) | {haa.CANARY} | set(haa.DEFENSIVE_CANDIDATES)
+        | {s["spy_asset"] for s in SWITCH_STRATEGIES} | {s["qqq_asset"] for s in SWITCH_STRATEGIES}
     )
     prices_by_asset = {}
     for asset in sorted(assets):
@@ -95,7 +106,7 @@ def compute():
 
     signals = {}
     meta = {}
-    display = {"date": None, "raw": [], "emergency": [], "rotation": [], "haa": []}
+    display = {"date": None, "raw": [], "emergency": [], "rotation": [], "haa": [], "switch": []}
 
     # 1. Raw values panel — price/SMA100/SMA200 snapshot for SPY and QQQ, and
     # price/SMA200 only for TIP.
@@ -210,6 +221,43 @@ def compute():
                 "top4": preview["offensive_ranking"][:haa.TOP_N],
             })
 
+    # 5. Daily SPY 200SMA "Switch". Between the bands, holds whatever position
+    # was in force yesterday (read from prev_signals's hidden `_base` key)
+    # rather than resolving to a neutral state. The QQQ-euphoria guard then
+    # overrides that base down to QQQ (30%) or CASH (40%) regardless of the
+    # SPY read; the guard's own downgrade to QQQ also becomes tomorrow's base,
+    # so the hold logic resumes from QQQ once the guard lifts.
+    for spec in SWITCH_STRATEGIES:
+        spy_prices = prices_by_asset[spec["spy_asset"]]
+        qqq_prices = prices_by_asset[spec["qqq_asset"]]
+        spy_price = _latest(spy_prices)
+        spy_sma200 = _sma(spy_prices, 200)
+        qqq_price = _latest(qqq_prices)
+        qqq_sma200 = _sma(qqq_prices, 200)
+
+        base_key = f'{spec["key"]}_base'
+        prev_base = prev_signals.get(base_key)
+
+        if spy_price is not None and spy_sma200 is not None and spy_price > spy_sma200 * spec["upper"]:
+            base = "TQQQ"
+        elif spy_price is not None and spy_sma200 is not None and spy_price < spy_sma200 * spec["lower"]:
+            base = "QQQ"
+        else:
+            base = prev_base or "QQQ"
+
+        state = base
+        if qqq_price is not None and qqq_sma200 is not None:
+            qqq_over = qqq_price / qqq_sma200 - 1
+            if qqq_over >= spec["qqq_cash_threshold"]:
+                base, state = "QQQ", "CASH"
+            elif qqq_over >= spec["qqq_delever_threshold"] and base == "TQQQ":
+                base, state = "QQQ", "QQQ"
+
+        signals[spec["key"]] = state
+        signals[base_key] = base
+        meta[spec["key"]] = {"label": spec["name"], "kind": "state"}
+        display["switch"].append({"name": spec["name"], "state": state})
+
     return signals, display, meta
 
 
@@ -235,6 +283,8 @@ def _banner_lines(changes, meta):
         info = meta.get(key, {})
         if info.get("kind") == "allocation":
             out.append(f'🔄 {info.get("label", key)} reallocated: {old} → {new}')
+        elif info.get("kind") == "state":
+            out.append(f'{SWITCH_EMOJI[new]} {info.get("label", key)}: {SWITCH_LABEL[old]} → {SWITCH_LABEL[new]}')
     return out
 
 
@@ -280,6 +330,9 @@ def format_message(display, changes, meta):
         lines.append(rt["name"])
         lines.append(f'  Current  →  {rt["current_allocation"]}')
         lines.append(f'  Preview  →  {rt["preview_allocation"]}')
+
+    for sw in display["switch"]:
+        lines.append(f'{sw["name"]}  {SWITCH_EMOJI[sw["state"]]} {SWITCH_LABEL[sw["state"]]}')
 
     # Raw values panel — monospace (<pre>) price/SMA snapshot for SPY, QQQ,
     # and TIP (TIP has no SMA100 row).
@@ -348,7 +401,7 @@ def main():
     args = ap.parse_args()
 
     prev_state = load_prev_state()
-    signals, display, meta = compute()
+    signals, display, meta = compute(prev_state.get("signals", {}))
     changes = diff_signals(prev_state.get("signals", {}), signals)
     message = format_message(display, changes, meta)
 

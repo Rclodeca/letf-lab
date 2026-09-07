@@ -48,3 +48,25 @@ ROTATION_STRATEGIES = [
 HAA_STRATEGIES = [
     {"name": "HAA", "key": "haa_signal"},
 ]
+
+# Daily SPY 200SMA "Switch": a buffered TQQQ/QQQ band strategy. Unlike the
+# retired 3-state traffic light (see archived_strategies.py), the zone
+# between the bands HOLDS the previous trading day's position instead of
+# resolving to a third neutral state (buffer against whipsaws). A two-tier
+# QQQ-euphoria guard overrides the SPY read whenever QQQ has itself run too
+# far above its own 200SMA: 30% -> deleverage TQQQ down to QQQ, 40% -> cash.
+# Rules and +4%/-3% bands mirror research/synth_200sma_spy_tqqq_1995_euphoria.py
+# (single-tier 30% cash valve); the second 30%/40% tier here is a variant not
+# yet backtested in research/.
+SWITCH_STRATEGIES = [
+    {
+        "name": "SPY 200SMA Switch",
+        "key": "spy_switch_signal",
+        "spy_asset": "SPY",
+        "qqq_asset": "QQQ",
+        "upper": 1.04,
+        "lower": 0.97,
+        "qqq_delever_threshold": 0.30,
+        "qqq_cash_threshold": 0.40,
+    },
+]
