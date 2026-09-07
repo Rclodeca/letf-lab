@@ -2,10 +2,11 @@
 
 Computes the Triplet (3-of-5 momentum rotation) and HAA allocations, the
 SPY 200SMA Switch (buffered TQQQ/QQQ band strategy with a QQQ-euphoria
-guard), a simple SPY/QQQ/TIP price-and-SMA raw-values panel, and a
-hidden-unless-triggered emergency euphoria-valve check — all defined in
-watchlist.py — diffs the discrete states against the previous run, and
-pushes a summary to Telegram.
+guard), the SQQQ Overextension strategy (TQQQ melt-up/breakdown switch vs.
+its own 250-day median), a simple SPY/QQQ/TIP/TQQQ price-and-SMA/median
+raw-values panel, and a hidden-unless-triggered emergency euphoria-valve
+check — all defined in watchlist.py — diffs the discrete states against
+the previous run, and pushes a summary to Telegram.
 
 Reuses the LETF Lab engine (`ai_swing.scoring.rotation_3of5`,
 `ai_swing.scoring.haa`, and `ai_swing.data.PriceService`) so the numbers
@@ -38,6 +39,7 @@ from ai_swing.scoring import rotation_3of5 as rot
 from notify.watchlist import (
     EMERGENCY,
     HAA_STRATEGIES,
+    OVEREXTENSION_STRATEGIES,
     RAW_ASSETS,
     RAW_ASSETS_200_ONLY,
     ROTATION_STRATEGIES,
@@ -49,6 +51,10 @@ STATE_PATH = Path(__file__).parent / "state" / "last_signals.json"
 # Display labels/emoji for the SPY 200SMA Switch's 3 states.
 SWITCH_LABEL = {"TQQQ": "Risk on", "QQQ": "Risk off", "CASH": "EMERGENCY CASH"}
 SWITCH_EMOJI = {"TQQQ": "🟢", "QQQ": "🟡", "CASH": "🆘"}
+
+# Display labels/emoji for the SQQQ Overextension strategy's 3 raw states.
+OVER_LABEL = {"normal": "Risk on", "over": "Overextended", "crashCash": "Risk off"}
+OVER_EMOJI = {"normal": "🟢", "over": "🟠", "crashCash": "🔴"}
 
 
 def _latest(series):
@@ -95,6 +101,7 @@ def compute(prev_signals=None):
         | set(rot.UNIVERSE) | {rot.CASH}
         | set(haa.OFFENSIVE_UNIVERSE) | {haa.CANARY} | set(haa.DEFENSIVE_CANDIDATES)
         | {s["spy_asset"] for s in SWITCH_STRATEGIES} | {s["qqq_asset"] for s in SWITCH_STRATEGIES}
+        | {s["asset"] for s in OVEREXTENSION_STRATEGIES}
     )
     prices_by_asset = {}
     for asset in sorted(assets):
@@ -106,7 +113,10 @@ def compute(prev_signals=None):
 
     signals = {}
     meta = {}
-    display = {"date": None, "raw": [], "emergency": [], "rotation": [], "haa": [], "switch": []}
+    display = {
+        "date": None, "raw": [], "emergency": [], "rotation": [], "haa": [],
+        "switch": [], "overextension": [],
+    }
 
     # 1. Raw values panel — price/SMA100/SMA200 snapshot for SPY and QQQ, and
     # price/SMA200 only for TIP.
@@ -258,6 +268,77 @@ def compute(prev_signals=None):
         meta[spec["key"]] = {"label": spec["name"], "kind": "state"}
         display["switch"].append({"name": spec["name"], "state": state})
 
+    # 6. Daily "SQQQ Overextension". The saved signal IS the previous raw
+    # state ("normal"/"over"/"crashCash") — from any state other than
+    # crashCash, today's melt-up/breakdown checks are re-evaluated fresh
+    # (no hysteresis on the melt-up side: falling back under the +55% line
+    # returns straight to "normal"/TQQQ); once in crashCash, the only way
+    # out is price recovering above the exit line. See watchlist.py's
+    # OVEREXTENSION_STRATEGIES docstring for the full rule.
+    for spec in OVEREXTENSION_STRATEGIES:
+        prices = prices_by_asset[spec["asset"]].dropna()
+        median = prices.rolling(window=spec["median_window"], min_periods=spec["median_window"]).median()
+        aligned = pd.concat({"price": prices, "median": median}, axis=1).dropna()
+
+        if aligned.empty:
+            print(f"warn: overextension strategy {spec['name']} skipped: not enough trailing history yet", file=sys.stderr)
+            continue
+
+        price = float(aligned["price"].iloc[-1])
+        med = float(aligned["median"].iloc[-1])
+
+        # Confirmed-breakdown gates: the median's own annualized slope_window-day
+        # slope, and the count of consecutive days price has closed below the
+        # median (not below the exit line — matches the reference config's
+        # belowC counter, which tracks distance from the center line itself).
+        slope_window = spec["slope_window"]
+        slope = None
+        if len(aligned) > slope_window:
+            prev_med = float(aligned["median"].iloc[-1 - slope_window])
+            if prev_med > 0:
+                slope = (med / prev_med) ** (252 / slope_window) - 1
+
+        streak = 0
+        for is_below in reversed((aligned["price"] < aligned["median"]).tolist()):
+            if not is_below:
+                break
+            streak += 1
+
+        prev_state = prev_signals.get(spec["key"], "normal")
+        over_line = med * (1 + spec["over_pct"])
+        exit_line = med * (1 + spec["exit_pct"])
+
+        if prev_state != "crashCash":
+            if price > over_line:
+                state = "over"
+            elif (
+                price < exit_line
+                and slope is not None and slope < spec["slope_gate_pct"]
+                and streak >= spec["below_gate_days"]
+            ):
+                state = "crashCash"
+            else:
+                state = "normal"
+        else:
+            state = "normal" if price > exit_line else "crashCash"
+
+        signals[spec["key"]] = state
+        meta[spec["key"]] = {"label": spec["name"], "kind": "overextension"}
+        display["overextension"].append({"name": spec["name"], "state": state})
+
+        d = _latest_date(prices)
+        if d and not display["date"]:
+            display["date"] = d.isoformat()
+        display["raw"].append(
+            {
+                "asset": spec["asset"],
+                "price": price,
+                "pct": _pct_day_change(prices),
+                "median": med,
+                "pct_vs_median": (price / med - 1) * 100,
+            }
+        )
+
     return signals, display, meta
 
 
@@ -285,6 +366,8 @@ def _banner_lines(changes, meta):
             out.append(f'🔄 {info.get("label", key)} reallocated: {old} → {new}')
         elif info.get("kind") == "state":
             out.append(f'{SWITCH_EMOJI[new]} {info.get("label", key)}: {SWITCH_LABEL[old]} → {SWITCH_LABEL[new]}')
+        elif info.get("kind") == "overextension":
+            out.append(f'{OVER_EMOJI[new]} {info.get("label", key)}: {OVER_LABEL[old]} → {OVER_LABEL[new]}')
     return out
 
 
@@ -334,8 +417,11 @@ def format_message(display, changes, meta):
     for sw in display["switch"]:
         lines.append(f'{sw["name"]}  {SWITCH_EMOJI[sw["state"]]} {SWITCH_LABEL[sw["state"]]}')
 
+    for ov in display["overextension"]:
+        lines.append(f'{ov["name"]}  {OVER_EMOJI[ov["state"]]} {OVER_LABEL[ov["state"]]}')
+
     # Raw values panel — monospace (<pre>) price/SMA snapshot for SPY, QQQ,
-    # and TIP (TIP has no SMA100 row).
+    # and TIP (TIP has no SMA100 row), plus price/median for TQQQ.
     lines.append("")
     lines.append("Raw values")
     block = []
@@ -343,12 +429,15 @@ def format_message(display, changes, meta):
         pct = f'{rv["pct"]:+.2f}%' if rv["pct"] is not None else "n/a"
         block.append(f'{rv["asset"]}   ({pct})')
         block.append(f'  Price      {rv["price"]:.2f}')
-        if rv["sma200"] is not None:
+        if rv.get("sma200") is not None:
             pct200 = f'{rv["pct_vs_200"]:+.2f}%' if rv["pct_vs_200"] is not None else "n/a"
             block.append(f'  SMA200     {rv["sma200"]:.2f}   ({pct200})')
-        if rv["sma100"] is not None:
+        if rv.get("sma100") is not None:
             pct100 = f'{rv["pct_vs_100"]:+.2f}%' if rv["pct_vs_100"] is not None else "n/a"
             block.append(f'  SMA100     {rv["sma100"]:.2f}   ({pct100})')
+        if rv.get("median") is not None:
+            pctm = f'{rv["pct_vs_median"]:+.2f}%' if rv["pct_vs_median"] is not None else "n/a"
+            block.append(f'  Median250  {rv["median"]:.2f}   ({pctm})')
         block.append("")
 
     for rt in display["rotation"]:
