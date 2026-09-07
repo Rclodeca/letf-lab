@@ -4,6 +4,8 @@
     "QQQ_emergency": false,
     "SPY_emergency": false,
     "haa_signal": "BIL 100%",
-    "rotation_3of5_signal": "PDBC 40%, EWJ 40%, SSO 20%"
+    "rotation_3of5_signal": "PDBC 40%, EWJ 40%, SSO 20%",
+    "spy_switch_signal": "TQQQ",
+    "spy_switch_signal_base": "TQQQ"
   }
 }
