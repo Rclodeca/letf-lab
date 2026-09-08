@@ -382,8 +382,36 @@ def _emergency_lines(display):
     return out
 
 
+def _quarter_start(d):
+    """Most recent calendar-quarter start (Jan/Apr/Jul/Oct 1) on or before d."""
+    month = ((d.month - 1) // 3) * 3 + 1
+    return date(d.year, month, 1)
+
+
+def _rebalance_banner_lines(d):
+    """Quarterly rebalance reminder for the static portfolio (not one of the
+    market-driven strategies above). Repeats for the first 3 days of the
+    quarter, since a single-day banner is easy to miss."""
+    qstart = _quarter_start(d)
+    if (d - qstart).days > 2:
+        return []
+    quarter_num = (qstart.month - 1) // 3 + 1
+    return [f'Rebalance your static portfolio — Q{quarter_num} {qstart.year} started {qstart.isoformat()}']
+
+
+def _days_since_rebalance_line(d):
+    """Always-visible backstop for the banner above: days since the calendar
+    quarter began, framed as days since the static portfolio should have
+    been rebalanced (there's no way to know if it actually was)."""
+    qstart = _quarter_start(d)
+    days = (d - qstart).days
+    return f'🗓️ {days} days since last rebalance (quarter started {qstart.isoformat()})'
+
+
 def format_message(display, changes, meta):
     lines = []
+
+    today = date.fromisoformat(display["date"]) if display["date"] else date.today()
 
     # Emergency euphoria-valve banner — highest priority, above even the
     # regular SIGNAL CHANGE banner. Hidden entirely unless triggered.
@@ -391,6 +419,14 @@ def format_message(display, changes, meta):
     if emergency:
         lines.append("<b>🆘 EMERGENCY — EUPHORIA VALVE</b>")
         lines += emergency
+        lines.append("")
+
+    # Quarterly rebalance reminder — rare but important, so it sits above the
+    # more frequent signal-change banner.
+    rebalance = _rebalance_banner_lines(today)
+    if rebalance:
+        lines.append("<b>🔁 QUARTERLY REBALANCE</b>")
+        lines += rebalance
         lines.append("")
 
     # Big attention banner at the very top on actionable changes. Being first,
@@ -423,6 +459,7 @@ def format_message(display, changes, meta):
     # Raw values panel — monospace (<pre>) price/SMA snapshot for SPY, QQQ,
     # and TIP (TIP has no SMA100 row), plus price/median for TQQQ.
     lines.append("")
+    lines.append(_days_since_rebalance_line(today))
     lines.append("Raw values")
     block = []
     for rv in display["raw"]:
