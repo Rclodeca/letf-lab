@@ -396,7 +396,7 @@ def _rebalance_banner_lines(d):
     if (d - qstart).days > 2:
         return []
     quarter_num = (qstart.month - 1) // 3 + 1
-    return [f'Rebalance your static portfolio — Q{quarter_num} {qstart.year} started {qstart.isoformat()}']
+    return [f'Rebalance your static portfolio — Q{quarter_num} {qstart.year}']
 
 
 def _days_since_rebalance_line(d):
@@ -405,7 +405,7 @@ def _days_since_rebalance_line(d):
     been rebalanced (there's no way to know if it actually was)."""
     qstart = _quarter_start(d)
     days = (d - qstart).days
-    return f'🗓️ {days} days since last rebalance (quarter started {qstart.isoformat()})'
+    return f'🗓️ {days} days since last rebalance'
 
 
 def format_message(display, changes, meta):
