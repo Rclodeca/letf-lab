@@ -22,6 +22,29 @@ RAW_ASSETS = ["SPY", "QQQ"]
 # Assets to print the same raw snapshot for, minus the SMA100 line.
 RAW_ASSETS_200_ONLY = ["TIP"]
 
+# AND-combined multi-asset gate: risk-on only when EVERY indicator passes,
+# each on its own asset. This is the r/LETFs "Golden Ratio" de-lever signal
+# (see research/golden_ratio_delever.py, variant C, and the robustness-grid
+# follow-up) — SPY 200SMA with a +/-1% hysteresis band AND TIP 200SMA with a
+# tighter +/-0.2% band. SPY's band was widened from 0.5% -> 1% after testing
+# showed 1% strictly dominates on CAGR/MaxDD/Sortino/trade-count. TIP's band
+# was widened from 0.1% -> 0.15% after research/golden_ratio_tip_band_compare.py
+# showed 0.15% strictly dominates 0.1% (same Sortino, slightly higher CAGR,
+# ~12% fewer trades, byte-identical 2022-bear behavior), then further to 0.2%.
+# TIP still stays comparatively tight because its signal is the primary
+# regime-read for slow bear markets (0.25%+ trades bear-market protection for
+# fewer whipsaws; 0.5%+ measurably hurts it).
+DUAL_GATES = [
+    {
+        "name": "Golden Ratio (SPY+TIP)",
+        "key": "golden_ratio_signal",
+        "indicators": [
+            {"asset": "SPY", "name": "SPY_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.01}},
+            {"asset": "TIP", "name": "TIP_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.002}},
+        ],
+    },
+]
+
 # Monthly "Triplet" momentum rotation (3-of-5 selection from a 14-asset
 # universe). Unlike the gate strategies this replaced, it doesn't reduce to a
 # risk-on/off boolean — it's a 14-asset momentum rank, dual-momentum filter

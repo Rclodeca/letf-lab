@@ -3,6 +3,9 @@
 only") to slim the Telegram message down to just Triplet + HAA. Kept here
 for reference in case any of these need to come back.
 
+(The Golden Ratio SPY+TIP dual gate was resurrected back into watchlist.py
+on 2026-09-10 — see DUAL_GATES there — so it's no longer listed below.)
+
 Not imported by watchlist.py or daily_signals.py — this is inert config.
 To resurrect one:
   1. Copy the relevant entry(ies) back into watchlist.py and re-add them to
@@ -37,27 +40,4 @@ STRATEGIES = [
 TRAFFIC_LIGHTS = [
     {"name": "SPY 200SMA", "asset": "SPY", "key": "SPY_200sma", "upper": 1.04, "lower": 0.97},
     {"name": "QQQ 200SMA", "asset": "QQQ", "key": "QQQ_200sma", "upper": 1.04, "lower": 0.97},
-]
-
-# AND-combined multi-asset gates: risk-on only when EVERY indicator passes,
-# each on its own asset. This is the r/LETFs "Golden Ratio" de-lever signal
-# (see research/golden_ratio_delever.py, variant C, and the robustness-grid
-# follow-up) — SPY 200SMA with a +/-1% hysteresis band AND TIP 200SMA with a
-# tighter +/-0.2% band. SPY's band was widened from 0.5% -> 1% after testing
-# showed 1% strictly dominates on CAGR/MaxDD/Sortino/trade-count. TIP's band
-# was widened from 0.1% -> 0.15% after research/golden_ratio_tip_band_compare.py
-# showed 0.15% strictly dominates 0.1% (same Sortino, slightly higher CAGR,
-# ~12% fewer trades, byte-identical 2022-bear behavior), then further to 0.2%.
-# TIP still stays comparatively tight because its signal is the primary
-# regime-read for slow bear markets (0.25%+ trades bear-market protection for
-# fewer whipsaws; 0.5%+ measurably hurts it).
-DUAL_GATES = [
-    {
-        "name": "Golden Ratio (SPY+TIP)",
-        "key": "golden_ratio_signal",
-        "indicators": [
-            {"asset": "SPY", "name": "SPY_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.01}},
-            {"asset": "TIP", "name": "TIP_SMA200", "type": "SMA_GATE", "params": {"period": 200, "threshold": 0.002}},
-        ],
-    },
 ]

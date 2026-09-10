@@ -84,7 +84,7 @@ Edit `watchlist.py`:
   the SMA200 to set the BUY/SELL bands, e.g. `1.04` = +4%, `0.97` = −3%).
 - `DUAL_GATES` — AND-combined multi-asset gates (risk-on only when every listed
   indicator passes, each on its own asset), e.g. the Golden Ratio SPY+TIP
-  de-lever signal. Also renders a raw band-values block per indicator.
+  de-lever signal. Renders just the risk-on/off verdict, no raw band values.
 - `EMERGENCY` — euphoria-valve guards (`threshold` = how far above its own
   200SMA an asset must run to trip). Normally invisible; a triggered check
   shows a `🆘 EMERGENCY` banner at the very top of the message, above the

@@ -3,14 +3,16 @@
 Computes the Triplet (3-of-5 momentum rotation) and HAA allocations, the
 SPY 200SMA Switch (buffered TQQQ/QQQ band strategy with a QQQ-euphoria
 guard), the SQQQ Overextension strategy (TQQQ melt-up/breakdown switch vs.
-its own 250-day median), a simple SPY/QQQ/TIP/TQQQ price-and-SMA/median
-raw-values panel, and a hidden-unless-triggered emergency euphoria-valve
-check — all defined in watchlist.py — diffs the discrete states against
-the previous run, and pushes a summary to Telegram.
+its own 250-day median), the Golden Ratio SPY+TIP de-lever dual gate
+(risk-on/off verdict only, no raw band values), a simple SPY/QQQ/TIP/TQQQ
+price-and-SMA/median raw-values panel, and a hidden-unless-triggered
+emergency euphoria-valve check — all defined in watchlist.py — diffs the
+discrete states against the previous run, and pushes a summary to Telegram.
 
 Reuses the LETF Lab engine (`ai_swing.scoring.rotation_3of5`,
-`ai_swing.scoring.haa`, and `ai_swing.data.PriceService`) so the numbers
-match the app exactly. No database and no web server.
+`ai_swing.scoring.haa`, `ai_swing.indicators.evaluator.evaluate_indicator`,
+and `ai_swing.data.PriceService`) so the numbers match the app exactly. No
+database and no web server.
 
 Run:
     python -m notify.daily_signals            # compute, send to Telegram, save state
@@ -28,15 +30,19 @@ import os
 import sys
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pandas as pd
 
 from ai_swing.data import get_price_service
+from ai_swing.db.models import IndicatorType
+from ai_swing.indicators.evaluator import evaluate_indicator
 from ai_swing.scoring import haa
 from ai_swing.scoring import rotation_3of5 as rot
 
 from notify.watchlist import (
+    DUAL_GATES,
     EMERGENCY,
     HAA_STRATEGIES,
     OVEREXTENSION_STRATEGIES,
@@ -55,6 +61,10 @@ SWITCH_EMOJI = {"TQQQ": "🟢", "QQQ": "🟡", "CASH": "🆘"}
 # Display labels/emoji for the SQQQ Overextension strategy's 3 raw states.
 OVER_LABEL = {"normal": "Risk on", "over": "Overextended", "crashCash": "Risk off"}
 OVER_EMOJI = {"normal": "🟢", "over": "🟠", "crashCash": "🔴"}
+
+# Display dot for boolean risk-on/risk-off verdicts (e.g. the Golden Ratio
+# dual gate).
+SIGNAL_DOT = {True: "🟢", False: "🔴"}
 
 
 def _latest(series):
@@ -102,6 +112,7 @@ def compute(prev_signals=None):
         | set(haa.OFFENSIVE_UNIVERSE) | {haa.CANARY} | set(haa.DEFENSIVE_CANDIDATES)
         | {s["spy_asset"] for s in SWITCH_STRATEGIES} | {s["qqq_asset"] for s in SWITCH_STRATEGIES}
         | {s["asset"] for s in OVEREXTENSION_STRATEGIES}
+        | {i["asset"] for g in DUAL_GATES for i in g["indicators"]}
     )
     prices_by_asset = {}
     for asset in sorted(assets):
@@ -115,7 +126,7 @@ def compute(prev_signals=None):
     meta = {}
     display = {
         "date": None, "raw": [], "emergency": [], "rotation": [], "haa": [],
-        "switch": [], "overextension": [],
+        "switch": [], "overextension": [], "dual_gate": [],
     }
 
     # 1. Raw values panel — price/SMA100/SMA200 snapshot for SPY and QQQ, and
@@ -162,6 +173,27 @@ def compute(prev_signals=None):
                 "triggered": triggered,
             }
         )
+
+    # 2b. AND-combined multi-asset dual gate (the Golden Ratio SPY+TIP
+    # de-lever signal) — risk-on only when every indicator passes. Just the
+    # risk-on/off verdict is shown; no raw band values.
+    for spec in DUAL_GATES:
+        results = []
+        for ind_spec in spec["indicators"]:
+            prices = prices_by_asset[ind_spec["asset"]]
+            returns = prices.pct_change()
+            ind = SimpleNamespace(
+                id=0,
+                name=ind_spec["name"],
+                type=IndicatorType(ind_spec["type"]),
+                params=ind_spec["params"],
+            )
+            results.append(evaluate_indicator(ind, prices, returns=returns))
+        risk_on = all(r.gate_passed for r in results)
+        key = spec["key"]
+        signals[key] = risk_on
+        meta[key] = {"label": spec["name"], "kind": "verdict"}
+        display["dual_gate"].append({"name": spec["name"], "risk_on": risk_on})
 
     # 3. Monthly "Triplet" momentum rotation (3-of-5 selection). No
     # risk-on/off boolean here — two allocations are tracked: the CURRENT one
@@ -368,6 +400,9 @@ def _banner_lines(changes, meta):
             out.append(f'{SWITCH_EMOJI[new]} {info.get("label", key)}: {SWITCH_LABEL[old]} → {SWITCH_LABEL[new]}')
         elif info.get("kind") == "overextension":
             out.append(f'{OVER_EMOJI[new]} {info.get("label", key)}: {OVER_LABEL[old]} → {OVER_LABEL[new]}')
+        elif info.get("kind") == "verdict":
+            word = "RISK-ON" if new else "RISK-OFF"
+            out.append(f'{SIGNAL_DOT[new]} {info.get("label", key)} now {word}')
     return out
 
 
@@ -455,6 +490,10 @@ def format_message(display, changes, meta):
 
     for ov in display["overextension"]:
         lines.append(f'{ov["name"]}  {OVER_EMOJI[ov["state"]]} {OVER_LABEL[ov["state"]]}')
+
+    for dg in display["dual_gate"]:
+        word = "RISK-ON" if dg["risk_on"] else "RISK-OFF"
+        lines.append(f'{dg["name"]}  {SIGNAL_DOT[dg["risk_on"]]} {word}')
 
     # Raw values panel — monospace (<pre>) price/SMA snapshot for SPY, QQQ,
     # and TIP (TIP has no SMA100 row), plus price/median for TQQQ.
