@@ -1,8 +1,9 @@
 {
-  "date": "2026-09-08",
+  "date": "2026-09-10",
   "signals": {
     "QQQ_emergency": false,
     "SPY_emergency": false,
+    "golden_ratio_signal": false,
     "haa_signal": "BIL 100%",
     "rotation_3of5_signal": "PDBC 40%, EWJ 40%, SSO 20%",
     "spy_switch_signal": "TQQQ",
